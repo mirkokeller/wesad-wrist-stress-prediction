@@ -1,30 +1,8 @@
-# Python cache
-__pycache__/
-*.py[cod]
-
-# Virtual environments
-.venv/
-venv/
-env/
-
-# Jupyter
-.ipynb_checkpoints/
-
-# Build and packaging
-build/
-dist/
-*.egg-info/
-
-# Logs and local settings
-*.log
-.env
-
-# OS/editor
-.DS_Store
-Thumbs.db
-.vscode/
-
-# Data and trained artifacts
 data/
-models/
-artifacts/
+experiments/*/figures/
+*.pkl
+*.joblib
+__pycache__/
+.ipynb_checkpoints/
+.venv/
+.uv-cache/

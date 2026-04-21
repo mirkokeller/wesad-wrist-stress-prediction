@@ -1,31 +1,63 @@
-# wesad-wrist-stress-prediction
+# wesad-stress
 
-Machine Learning project for stress prediction using only wrist physiological signals from the WESAD dataset (Empatica E4).
+Minimal and clean structure for a wrist-only WESAD project.
 
-## Objective
+## Structure
 
-Build and compare models to detect stress conditions from wearable signals.
+```text
+wesad-stress/
+│
+├── README.md
+├── requirements.txt
+├── .gitignore
+├── config.yaml
+│
+├── data/
+│   ├── 01_raw/         # original local data
+│   ├── 02_intermediate/ # intermediate data
+│   └── 03_processed/   # model-ready data
+│
+├── documents/
+│   ├── journal-club-checklist.pdf
+│   ├── project-brief.md
+│   └── notes.txt
+│
+├── notebooks/
+│   ├── 01-eda.ipynb
+│   ├── 02-preprocessing.ipynb
+│   ├── 03-features.ipynb
+│   └── 04-results.ipynb
+│
+├── src/
+│   ├── __init__.py
+│   ├── loader.py
+│   ├── preprocessing.py
+│   ├── features.py
+│   ├── evaluation.py
+│   └── explainability.py
+│
+├── scripts/
+│   ├── build_dataset.py
+│   └── train_evaluate.py
+│
+└── experiments/
+    └── run_001/
+        ├── config.yaml
+        ├── metrics.json
+        └── figures/
+```
 
-- Binary classification: stress vs non-stress
-- Multi-class classification: baseline, stress, amusement
+## Folder Meaning
 
-## Mandatory Constraints
-
-- Use only wrist signals from Empatica E4
-- Exclude chest signals from RespiBAN
-- Use models different from those proposed in the original WESAD paper
-- Use leave-one-subject-out cross-validation for subject-independent evaluation
+- `data/01_raw/`: original WESAD files stored locally.
+- `data/02_intermediate/`: temporary or partially processed data.
+- `data/03_processed/`: final data ready for training and evaluation.
+- `documents/`: project notes, checklist, and academic brief.
+- `notebooks/`: notebooks for analysis, checks, and results.
+- `src/`: reusable Python modules.
+- `scripts/`: command-line entry points.
+- `experiments/`: saved outputs from each run.
 
 ## Dataset
 
 - WESAD: https://ubi29.informatik.uni-siegen.de/usi/data_wesad.html
-- Reference paper: https://dl.acm.org/doi/epdf/10.1145/3242969.3242985
-
-## Planned Workflow
-
-1. Data loading and wrist-only filtering
-2. Preprocessing and windowing
-3. Feature extraction (time/frequency/statistical)
-4. Model training (multiple classifiers)
-5. LOSO validation
-6. Performance comparison and analysis

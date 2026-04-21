@@ -1,8 +1,23 @@
-data/
-experiments/*/figures/
-*.pkl
-*.joblib
+# Python
 __pycache__/
+*.py[cod]
 .ipynb_checkpoints/
+
+# Virtual environments and local caches
 .venv/
 .uv-cache/
+
+# Model artifacts
+*.joblib
+
+# Data
+data/01_raw/**
+data/02_intermediate/**
+data/03_processed/**
+!data/01_raw/.gitkeep
+!data/02_intermediate/.gitkeep
+!data/03_processed/.gitkeep
+
+# Experiment outputs
+experiments/run_*/figures/**
+!experiments/run_*/figures/.gitkeep

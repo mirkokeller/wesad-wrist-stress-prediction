@@ -10,7 +10,8 @@ Possible task setup: binary classification (stress vs non-stress) or multi-class
 
 - Use only wrist data from the WESAD dataset (Empatica E4).
 - Fully exclude chest signals from RespiBAN.
-- Use models different from those proposed in the original paper.
+- Use models different from those proposed in the original paper. So we cannot use  Decision Tree (DT), Random Forest (RF), AdaBoost (AB)Linear Discriminant Analysis (LDA), and k-Nearest Neighbour (kNN). 
+
 - Use leave-one-subject-out (LOSO) validation.
 - Use Python.
 

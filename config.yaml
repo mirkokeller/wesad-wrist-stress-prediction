@@ -1,29 +1,30 @@
 paths:
-  raw: data/01_raw/WESAD
-  intermediate: data/02_intermediate
-  processed: data/03_processed
+   raw: data/01_raw/WESAD
+   intermediate: data/02_intermediate
+   processed: data/03_processed
 
 subjects: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17]
 
 signals:
-  bvp_hz: 64
-  eda_hz: 4
-  temp_hz: 4
-  acc_hz: 32
-  label_hz: 700
+   bvp_hz: 64
+   eda_hz: 4
+   temp_hz: 4
+   acc_hz: 32
+   label_hz: 700
 
 windowing:
-  size_sec: 60
-  overlap: 0.5
+   acc_size_sec: 5
+   physio_size_sec: 60
+   shift_sec: 0.25
 
 classes:
-  use_3_class: true
-  labels: [1, 2, 3]
+   use_3_class: true
+   labels: [1, 2, 3]
 
 training:
-  seed: 42
-  scaler: standard
+   seed: 42
+   scaler: standard
 
 experiment:
-  name: run_001
-  output_dir: experiments
+   name: run_001
+   output_dir: experiments

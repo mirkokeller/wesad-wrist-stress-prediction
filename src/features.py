@@ -18,6 +18,65 @@ from scipy import signal as scipy_signal
 from scipy import stats as scipy_stats
 
 
+# ── Helper functions -----------------------------------------------------------
+
+def _sample_entropy(signal: np.ndarray, m: int = 2, r: float = 0.2) -> float:
+    """Compute Sample Entropy (SampEn) of a signal.
+
+    Sample Entropy measures the regularity/complexity of a signal.
+    Lower values = more regular/predictable (often associated with stress).
+    Higher values = more complex/unpredictable (often associated with relaxation).
+
+    Parameters
+    ----------
+    signal : np.ndarray
+        Input signal (e.g., NN intervals).
+    m : int, default 2
+        Embedding dimension (template length).
+    r : float, default 0.2
+        Tolerance (fraction of std).
+
+    Returns
+    -------
+    float
+        Sample Entropy value.
+    """
+    sig = np.asarray(signal, dtype=float)
+    n = len(sig)
+
+    if n < m + 1:
+        return 0.0
+
+    # Compute standard deviation for tolerance
+    std = np.std(sig, ddof=0)
+    if std == 0:
+        return 0.0
+
+    threshold = r * std
+
+    # Build template vectors
+    def _count_matches(template: np.ndarray, all_vectors: np.ndarray) -> int:
+        """Count vectors within threshold of template."""
+        diffs = np.abs(all_vectors - template)
+        return int(np.sum(np.max(diffs, axis=1) < threshold))
+
+    # Extract overlapping m-length vectors
+    x_m = np.array([sig[i:i+m] for i in range(n - m)])
+    x_m1 = np.array([sig[i:i+m+1] for i in range(n - m)])
+
+    # Count matches
+    match_m = sum(_count_matches(x_m[i], x_m[i+1:]) for i in range(len(x_m)))
+    match_m1 = sum(_count_matches(x_m1[i], x_m1[i+1:]) for i in range(len(x_m1)))
+
+    # Avoid division by zero
+    total_pairs = len(x_m) * (len(x_m) - 1) / 2
+    if total_pairs == 0 or match_m == 0:
+        return 0.0
+
+    sampen = -np.log(match_m1 / match_m) if match_m1 > 0 else 0.0
+    return float(sampen)
+
+
 # ── ACC features ----------------------------------------------------------------
 
 def acc_features(acc_window: np.ndarray, fs: float = 32.0) -> dict[str, float]:
@@ -75,8 +134,8 @@ def acc_features(acc_window: np.ndarray, fs: float = 32.0) -> dict[str, float]:
 
 # ── BVP features (manual peak detection) ----------------------------------------
 
-def _find_peaks_simple(signal: np.ndarray, fs: float, min_distance_s: float = 0.3) -> np.ndarray:
-    """Simple peak detector for PPG: find positive zero-crossings of first derivative.
+def _find_peaks_improved(signal: np.ndarray, fs: float, min_distance_s: float = 0.3) -> np.ndarray:
+    """Improved peak detector for PPG using scipy's find_peaks with adaptive thresholds.
 
     Parameters
     ----------
@@ -92,40 +151,59 @@ def _find_peaks_simple(signal: np.ndarray, fs: float, min_distance_s: float = 0.
     np.ndarray
         Peak sample indices.
     """
-    # Center the signal
-    sig = signal.ravel() - np.mean(signal)
+    sig = signal.ravel()
 
-    # First derivative
-    dx = np.diff(sig)
-    # Zero-crossings: where derivative goes positive (minima -> maxima)
-    # Actually we want upward crossing: dx[:-1] < 0 and dx[1:] > 0
-    # and the original signal is positive around that region
-    zero_cross = np.where((dx[:-1] < 0) & (dx[1:] >= 0))[0] + 1
-
-    # Refine: find local maxima around each zero-crossing
-    peaks = []
-    search_radius = int(0.15 * fs)  # 150 ms search window
-    for zc in zero_cross:
-        start = max(0, zc - search_radius)
-        end = min(len(sig), zc + search_radius)
-        local_max = start + int(np.argmax(sig[start:end]))
-        peaks.append(local_max)
-
-    if not peaks:
+    if len(sig) < 2:
         return np.array([], dtype=int)
 
-    peaks = np.array(peaks, dtype=int)
+    # Preprocess: remove baseline drift using detrending
+    from scipy import signal as scipy_signal
+    detrended = scipy_signal.detrend(sig, type='linear')
 
-    # Minimum distance filter
-    min_samples = int(min_distance_s * fs)
-    if min_samples <= 1:
-        return peaks
+    # Compute adaptive threshold based on signal statistics
+    median_val = np.median(detrended)
+    mad = np.median(np.abs(detrended - median_val)) * 1.4826  # Robust estimate of std
 
-    filtered = [peaks[0]]
-    for p in peaks[1:]:
-        if p - filtered[-1] >= min_samples:
-            filtered.append(p)
-    return np.array(filtered, dtype=int)
+    # Set height threshold: peaks should be at least 1 MAD above median
+    height = median_val + 0.5 * mad
+
+    # Set prominence threshold: peaks should stand out from local noise
+    # Prominence is the height of the peak above its surrounding baseline
+    prominence = 0.3 * mad
+
+    # Set width constraint based on expected heart rate range (40-180 bpm)
+    # This gives peak width of ~0.1-0.4 seconds
+    min_width = int(0.08 * fs)  # Minimum peak width in samples
+    max_width = int(0.35 * fs)  # Maximum peak width in samples
+
+    # Find peaks with constraints
+    peak_properties = scipy_signal.find_peaks(
+        detrended,
+        height=height,
+        prominence=prominence,
+        distance=int(min_distance_s * fs),
+        width=(min_width, max_width),
+        rel_height=0.75,  # Half prominence for width calculation
+    )
+
+    peaks = peak_properties[0]
+
+    if len(peaks) < 2:
+        # Fallback: try with relaxed constraints
+        peak_properties = scipy_signal.find_peaks(
+            detrended,
+            height=median_val + 0.3 * mad,
+            prominence=0.2 * mad,
+            distance=int(min_distance_s * fs),
+        )
+        peaks = peak_properties[0]
+
+    # Return both peaks and count for feature extraction
+    peak_count = len(peaks)
+    if peak_count < 2:
+        return np.array([], dtype=int), 0
+
+    return peaks.astype(int), peak_count
 
 
 def bvp_features(bvp_window: np.ndarray, fs: float = 64.0) -> dict[str, float]:
@@ -140,23 +218,29 @@ def bvp_features(bvp_window: np.ndarray, fs: float = 64.0) -> dict[str, float]:
     if len(sig) == 0:
         return {k: 0.0 for k in _BVP_FEATURE_KEYS}
 
-    # Find peaks
-    peaks = _find_peaks_simple(sig, fs=fs)
+    # Find peaks using improved algorithm
+    peaks, peak_count = _find_peaks_improved(sig, fs=fs)
 
     if len(peaks) < 2:
-        return {k: 0.0 for k in _BVP_FEATURE_KEYS}
+        # Return zeros but include peak_count for model to assess signal quality
+        features = {k: 0.0 for k in _BVP_FEATURE_KEYS}
+        features["bvp_peak_count"] = 0.0
+        return features
 
     # HR from inter-peak intervals (in seconds)
     peak_diffs = np.diff(peaks) / fs
     hr = 60.0 / peak_diffs
     features["bvp_hr_mean"] = float(np.mean(hr))
-    features["bvp_hr_std"] = float(np.std(hr, ddof=1))
+    features["bvp_hr_std"] = float(np.std(hr, ddof=1)) if len(hr) > 1 else 0.0
 
     # NN intervals: use peak intervals directly (in seconds)
     nn_intervals = peak_diffs
     features["bvp_hrv_mean_nn"] = float(np.mean(nn_intervals))
-    features["bvp_hrv_std_nn"] = float(np.std(nn_intervals, ddof=1))
-    features["bvp_hrv_rmssd"] = float(np.sqrt(np.mean(np.diff(nn_intervals) ** 2)))
+    features["bvp_hrv_std_nn"] = float(np.std(nn_intervals, ddof=1)) if len(nn_intervals) > 1 else 0.0
+    features["bvp_hrv_rmssd"] = float(np.sqrt(np.mean(np.diff(nn_intervals) ** 2))) if len(nn_intervals) > 1 else 0.0
+
+    # Peak count feature (signal quality indicator)
+    features["bvp_peak_count"] = float(peak_count)
 
     # Frequency-domain HRV on NN intervals (resample to 4 Hz for spectral estimation)
     if len(nn_intervals) >= 4:
@@ -193,16 +277,35 @@ def bvp_features(bvp_window: np.ndarray, fs: float = 64.0) -> dict[str, float]:
                 def _band_power(low: float, high: float) -> float:
                     return 0.0
 
+                # If we don't have sufficient samples, return zeros
+                def _band_power(low: float, high: float) -> float:
+                    return 0.0
+
             features["bvp_hrv_ulf"] = _band_power(0.01, 0.04)
             features["bvp_hrv_lf"] = _band_power(0.04, 0.15)
             features["bvp_hrv_hf"] = _band_power(0.15, 0.4)
             features["bvp_hrv_uhf"] = _band_power(0.4, 1.0)
+            
+            # LF/HF ratio (classic stress indicator)
+            lf = features["bvp_hrv_lf"]
+            hf = features["bvp_hrv_hf"]
+            features["bvp_hrv_lf_hf_ratio"] = float(lf / hf) if hf > 0 else 0.0
         else:
             for band in ["ulf", "lf", "hf", "uhf"]:
                 features[f"bvp_hrv_{band}"] = 0.0
+            features["bvp_hrv_lf_hf_ratio"] = 0.0
     else:
         for band in ["ulf", "lf", "hf", "uhf"]:
             features[f"bvp_hrv_{band}"] = 0.0
+        features["bvp_hrv_lf_hf_ratio"] = 0.0
+
+    # Sample Entropy (non-linear dynamics, strong stress indicator)
+    # Sample Entropy measures signal regularity/complexity
+    # Lower entropy = more regular/predictable = often associated with stress
+    if len(nn_intervals) >= 5:
+        features["bvp_hrv_sampen"] = float(_sample_entropy(nn_intervals, m=2, r=0.2))
+    else:
+        features["bvp_hrv_sampen"] = 0.0
 
     return features
 
@@ -217,6 +320,9 @@ _BVP_FEATURE_KEYS = [
     "bvp_hrv_lf",
     "bvp_hrv_hf",
     "bvp_hrv_uhf",
+    "bvp_hrv_lf_hf_ratio",
+    "bvp_hrv_sampen",
+    "bvp_peak_count",
 ]
 
 
@@ -238,7 +344,7 @@ def eda_features(eda_window: np.ndarray, fs: float = 4.0) -> dict[str, float]:
 
     # Basic stats
     features["eda_mean"] = float(np.mean(sig))
-    features["eda_std"] = float(np.std(sig, ddof=1))
+    features["eda_std"] = float(np.std(sig, ddof=1)) if len(sig) > 1 else 0.0
     features["eda_min"] = float(np.min(sig))
     features["eda_max"] = float(np.max(sig))
     features["eda_range"] = float(np.max(sig) - np.min(sig))
@@ -252,14 +358,14 @@ def eda_features(eda_window: np.ndarray, fs: float = 4.0) -> dict[str, float]:
         kernel_size = 3
     scl = scipy_signal.medfilt(sig, kernel_size=kernel_size)
     scl_mean = float(np.mean(scl))
-    scl_std = float(np.std(scl, ddof=1))
+    scl_std = float(np.std(scl, ddof=1)) if len(scl) > 1 else 0.0
     features["eda_scl_mean"] = scl_mean
     features["eda_scl_std"] = scl_std
 
     # Phasic / SCR component
     scr = sig - scl
     scr_mean = float(np.mean(scr))
-    scr_std = float(np.std(scr, ddof=1))
+    scr_std = float(np.std(scr, ddof=1)) if len(scr) > 1 else 0.0
     features["eda_scr_mean"] = scr_mean
     features["eda_scr_std"] = scr_std
 
@@ -295,7 +401,7 @@ def temp_features(temp_window: np.ndarray) -> dict[str, float]:
     sig = temp_window.ravel()
     return {
         "temp_mean": float(np.mean(sig)),
-        "temp_std": float(np.std(sig, ddof=1)),
+        "temp_std": float(np.std(sig, ddof=1)) if len(sig) > 1 else 0.0,
         "temp_min": float(np.min(sig)),
         "temp_max": float(np.max(sig)),
         "temp_range": float(np.max(sig) - np.min(sig)),

@@ -119,10 +119,18 @@ def _label_mode_per_block(labels: np.ndarray, block_size: int) -> np.ndarray:
     truncated = labels[: n_blocks * block_size]
     blocks = truncated.reshape(n_blocks, block_size)
     # bincount-based mode (labels are small non-negative ints)
+    # Tie-break with the last value in the block to better preserve
+    # immediate temporal continuity at transitions.
     modes = np.empty(n_blocks, dtype=int)
     for i in range(n_blocks):
-        counts = np.bincount(blocks[i])
-        modes[i] = int(np.argmax(counts))
+        block = blocks[i]
+        counts = np.bincount(block)
+        max_count = int(np.max(counts))
+        winners = np.where(counts == max_count)[0]
+        if winners.size == 1:
+            modes[i] = int(winners[0])
+        else:
+            modes[i] = int(block[-1])
     return modes
 
 
@@ -162,8 +170,15 @@ def create_windows_for_subject(
     target_labels = target_labels or {1, 2, 3}
     ps = preprocess_subject(subject)
 
-    # Determine unified recording length in seconds via the label track
-    rec_len_s = ps["labels"].shape[0] / LABEL_HZ
+    # Determine unified recording length in seconds from the minimum
+    # available track to keep all modalities and labels aligned.
+    rec_len_s = min(
+        ps["labels"].shape[0] / LABEL_HZ,
+        ps["ACC"].shape[0] / SIGNAL_HZ["ACC"],
+        ps["BVP"].shape[0] / SIGNAL_HZ["BVP"],
+        ps["EDA"].shape[0] / SIGNAL_HZ["EDA"],
+        ps["TEMP"].shape[0] / SIGNAL_HZ["TEMP"],
+    )
 
     # --- Build the 4 Hz time axis --------------------------------------------
     # Each step = 0.25 s. First usable physio window ends at t = 60 s.
@@ -188,38 +203,41 @@ def create_windows_for_subject(
 
     for i in range(step_count):
         t_end = physio_win_s + i * shift_s
-        # Label index at this time point
-        label_idx = int(round(t_end / shift_s))
+        # Label index on the 4 Hz grid at the window end.
+        # Use the last completed 0.25 s block (causal), not the next block.
+        label_idx = int(round(t_end / shift_s)) - 1
         if label_idx >= labels_4hz.shape[0]:
             break
+        if label_idx < 0:
+            continue
         lbl = labels_4hz[label_idx]
         if lbl not in target_labels:
             continue
 
         # --- ACC window (5 s ending at t_end) --------------------------------
         acc_start_s = t_end - acc_win_s
-        acc_start = int(acc_start_s * SIGNAL_HZ["ACC"])
-        acc_end = int(t_end * SIGNAL_HZ["ACC"])
+        acc_start = int(round(acc_start_s * SIGNAL_HZ["ACC"]))
+        acc_end = int(round(t_end * SIGNAL_HZ["ACC"]))
         if acc_end > ps["ACC"].shape[0]:
             break
         acc_w.append(ps["ACC"][acc_start:acc_end])
 
         # --- Physiological window (60 s ending at t_end) -----------------------
         phys_start_s = t_end - physio_win_s
-        bvp_start = int(phys_start_s * SIGNAL_HZ["BVP"])
-        bvp_end = int(t_end * SIGNAL_HZ["BVP"])
+        bvp_start = int(round(phys_start_s * SIGNAL_HZ["BVP"]))
+        bvp_end = int(round(t_end * SIGNAL_HZ["BVP"]))
         if bvp_end > ps["BVP"].shape[0]:
             break
         bvp_w.append(ps["BVP"][bvp_start:bvp_end])
 
-        eda_start = int(phys_start_s * SIGNAL_HZ["EDA"])
-        eda_end = int(t_end * SIGNAL_HZ["EDA"])
+        eda_start = int(round(phys_start_s * SIGNAL_HZ["EDA"]))
+        eda_end = int(round(t_end * SIGNAL_HZ["EDA"]))
         if eda_end > ps["EDA"].shape[0]:
             break
         eda_w.append(ps["EDA"][eda_start:eda_end])
 
-        temp_start = int(phys_start_s * SIGNAL_HZ["TEMP"])
-        temp_end = int(t_end * SIGNAL_HZ["TEMP"])
+        temp_start = int(round(phys_start_s * SIGNAL_HZ["TEMP"]))
+        temp_end = int(round(t_end * SIGNAL_HZ["TEMP"]))
         if temp_end > ps["TEMP"].shape[0]:
             break
         temp_w.append(ps["TEMP"][temp_start:temp_end])

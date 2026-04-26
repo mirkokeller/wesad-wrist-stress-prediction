@@ -124,16 +124,6 @@ def get_enhanced_models(random_state: int = 42, backend: str = "auto") -> dict[s
 
     if resolved_backend == "gpu":
         models: dict[str, Any] = {
-            "SVM": cuSVC(kernel="rbf", probability=True, random_state=random_state),
-            "SVM Tuned": cuSVC(
-                kernel="rbf",
-                probability=True,
-                C=6.0,
-                gamma="scale",
-                random_state=random_state,
-            ),
-            "Logistic Regression": cuLogisticRegression(max_iter=1000),
-            "Logistic Regression Tuned": cuLogisticRegression(max_iter=2000, C=2.0),
             "MLP": MLPClassifier(
                 hidden_layer_sizes=(200, 80),
                 max_iter=700,
@@ -144,20 +134,6 @@ def get_enhanced_models(random_state: int = 42, backend: str = "auto") -> dict[s
         return models
 
     models = {
-        "SVM": SVC(kernel="rbf", probability=True, random_state=random_state),
-        "SVM Tuned": SVC(
-            kernel="rbf",
-            probability=True,
-            C=6.0,
-            gamma="scale",
-            random_state=random_state,
-        ),
-        "Logistic Regression": LogisticRegression(max_iter=1000, random_state=random_state),
-        "Logistic Regression Tuned": LogisticRegression(
-            max_iter=2000,
-            C=2.0,
-            random_state=random_state,
-        ),
         "MLP": MLPClassifier(
             hidden_layer_sizes=(200, 80),
             max_iter=700,

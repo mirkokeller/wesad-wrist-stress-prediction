@@ -31,6 +31,7 @@ from src.models import (
     run_loso_cv,
     compute_metrics_table,
     summarize_selected_features,
+    save_loso_results,
 )
 from src.evaluation import (
     compute_per_subject_metrics,
@@ -154,6 +155,11 @@ def main() -> None:
     elapsed = time.time() - start
     print(f"  Completed in {elapsed:.1f}s")
 
+    # ── Persist LOSO results for later XAI notebook ─────────────────────────
+    loso_results_path = output_dir / "loso_results"
+    save_loso_results(results, X, y, subject, feature_names, loso_results_path)
+    print(f"  Saved LOSO results to: {loso_results_path}.npz")
+
     # ── Metrics: multi-class ────────────────────────────────────────────────
     print("\nComputing multi-class metrics...")
     metrics_df = compute_metrics_table(results)
@@ -234,7 +240,7 @@ def main() -> None:
             clf.fit(X, y)
 
             imp_df = compute_permutation_importance(
-                clf, X, y, feature_names, n_repeats=5, random_state=args.seed,
+                clf, X, y, feature_names, n_repeats=2, random_state=args.seed,
             )
             imp_df.to_csv(
                 output_dir / f"perm_importance_{model_name.lower().replace(' ', '_')}.csv",

@@ -119,11 +119,19 @@ def get_default_models(random_state: int = 42, backend: str = "auto") -> dict[st
 
 
 def get_enhanced_models(random_state: int = 42, backend: str = "auto") -> dict[str, Any]:
-    """Return stronger baseline models for tabular features."""
+    """Return stronger baseline models for tabular features.
+
+    Includes SVM (baseline + tuned), Logistic Regression (baseline + tuned),
+    and MLP. Uses cuML on GPU backend, sklearn on CPU.
+    """
     resolved_backend = resolve_backend(backend)
 
     if resolved_backend == "gpu":
         models: dict[str, Any] = {
+            "SVM": cuSVC(kernel="rbf", probability=True, random_state=random_state),
+            "SVM Tuned": cuSVC(C=6.0, kernel="rbf", gamma="scale", probability=True, random_state=random_state),
+            "Logistic Regression": cuLogisticRegression(max_iter=1000),
+            "Logistic Regression Tuned": cuLogisticRegression(C=2.0, max_iter=1000),
             "MLP": MLPClassifier(
                 hidden_layer_sizes=(200, 80),
                 max_iter=700,
@@ -134,6 +142,10 @@ def get_enhanced_models(random_state: int = 42, backend: str = "auto") -> dict[s
         return models
 
     models = {
+        "SVM": SVC(kernel="rbf", probability=True, random_state=random_state),
+        "SVM Tuned": SVC(C=6.0, kernel="rbf", gamma="scale", probability=True, random_state=random_state),
+        "Logistic Regression": LogisticRegression(max_iter=1000, random_state=random_state),
+        "Logistic Regression Tuned": LogisticRegression(C=2.0, max_iter=1000, random_state=random_state),
         "MLP": MLPClassifier(
             hidden_layer_sizes=(200, 80),
             max_iter=700,
@@ -771,3 +783,77 @@ def save_metrics_json(metrics_df: pd.DataFrame, output_path: str | Path) -> None
     payload = metrics_df.to_dict(orient="records")
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
+
+
+def save_loso_results(
+    results: dict[str, dict[str, list[Any]]],
+    X: np.ndarray,
+    y: np.ndarray,
+    subject: np.ndarray,
+    feature_names: list[str],
+    output_path: str | Path,
+) -> None:
+    """Persist LOSO results and feature data for later analysis (e.g. explainability).
+
+    Stores y_true, y_pred, y_prob, subject, feature_names etc. so that
+    05-explainability.ipynb can load them without re-running training.
+    """
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    model_names = list(results.keys())
+    y_true_list: list[list[int]] = []
+    y_pred_list: list[list[int]] = []
+    subject_list: list[list[int]] = []
+    y_prob_list: list[list[float]] = []
+
+    for name in model_names:
+        r = results[name]
+        y_true_list.append(r["y_true"])
+        y_pred_list.append(r["y_pred"])
+        subject_list.append(r["subject"])
+        y_prob_list.append(np.vstack(r["y_prob"]).tolist() if r.get("y_prob") else [])
+
+    np.savez_compressed(
+        path,
+        model_names=np.array(model_names, dtype=object),
+        y_true=np.array(y_true_list, dtype=object),
+        y_pred=np.array(y_pred_list, dtype=object),
+        subject=np.array(subject_list, dtype=object),
+        y_prob=np.array(y_prob_list, dtype=object),
+        X=X,
+        y=y,
+        subject_global=subject,
+        feature_names=np.array(feature_names, dtype=object),
+    )
+    print(f"Saved LOSO results to: {path}.npz")
+
+
+def load_loso_results(
+    output_path: str | Path,
+) -> dict[str, Any]:
+    """Reconstruct results dict from .npz saved by save_loso_results."""
+    path = Path(str(output_path).removesuffix(".npz"))
+    data = np.load(f"{path}.npz", allow_pickle=True)
+
+    model_names: list[str] = data["model_names"].tolist()
+    results: dict[str, dict[str, list[Any]]] = {}
+    for i, name in enumerate(model_names):
+        y_prob_arr: list[np.ndarray] = []
+        raw = data["y_prob"][i]
+        if isinstance(raw, np.ndarray) and raw.ndim > 0 and len(raw) > 0:
+            y_prob_arr = [np.array(p) for p in raw] if raw.dtype == object else [raw]
+        results[name] = {
+            "y_true": [int(v) for v in data["y_true"][i]],
+            "y_pred": [int(v) for v in data["y_pred"][i]],
+            "subject": [int(v) for v in data["subject"][i]],
+            "y_prob": y_prob_arr,
+        }
+
+    return {
+        "results": results,
+        "X": data["X"],
+        "y": data["y"],
+        "subject": data["subject_global"],
+        "feature_names": data["feature_names"].tolist(),
+    }

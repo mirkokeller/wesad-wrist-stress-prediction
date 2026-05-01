@@ -28,28 +28,29 @@
 - [x] Accuracy, Precision, Recall, F1-score (weighted) table
 - [x] Confusion matrices per model
 - [x] ROC curves (One-vs-Rest) per model
-- [ ] Metrics JSON persistence helper
-- [ ] Per-subject performance breakdown
-- [ ] Binary classification (stress vs. non-stress) evaluation
-- [ ] Per-subject error analysis
+- [x] Metrics JSON persistence helper (`save_metrics_json`)
+- [x] Per-subject performance breakdown (`compute_per_subject_metrics`)
+- [x] Binary classification (stress vs. non-stress) evaluation (`compute_binary_metrics`)
+- [x] Metrics bar plot (grouped bar chart saved to figures/)
+- [x] Per-subject accuracy bar plot (best model, saved to figures/)
 
 ## Explainability (XAI)
-- [ ] SHAP summary plots (global feature importance)
-- [ ] SHAP force plots (per-sample explanations)
-- [ ] Permutation feature importance
-- [ ] Per-class feature importance analysis
-- [ ] Error analysis: which subjects/samples are misclassified most
+- [x] SHAP summary plots (`src/explainability.py` — `compute_shap_values`, `plot_shap_summary`, `plot_shap_bar`)
+- [x] SHAP force plots (per-sample explanations) (`plot_force_plot`, `plot_force_plot_grid`)
+- [x] Permutation feature importance (`src/explainability.py` — `compute_permutation_importance`, `plot_permutation_importance`)
+- [x] Per-class feature importance analysis (SHAP per-class summary plots)
+- [x] Error analysis: which subjects/samples are misclassified most (`compute_subject_error_analysis`, `plot_subject_error_analysis`)
 
 ## CLI & Scripts
 - [x] `scripts/build_dataset.py` — raw → features
-- [ ] `scripts/train_evaluate.py` — run full training + evaluation + XAI
+- [x] `scripts/train_evaluate.py` — run full training + evaluation + XAI
 
 ## Analysis Notebooks
 - [x] `01-eda.ipynb` — raw data exploration
 - [x] `02-preprocessing.ipynb` — preprocessing & windowing validation
 - [x] `03-features.ipynb` — extracted feature analysis
 - [x] `04-models.ipynb` — model training and metrics
-- [ ] `05-explainability.ipynb` — XAI, feature importance, error analysis
+- [x] `05-explainability.ipynb` — XAI, feature importance, error analysis
 
 ## Report Requirements
 - [ ] Journal Club checklist coverage

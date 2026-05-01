@@ -145,6 +145,72 @@ def save_metrics(metrics_df: pd.DataFrame, output_path: str | Path) -> None:
         json.dump(metrics_df.to_dict(orient="records"), handle, indent=2)
 
 
+def compute_subject_error_analysis(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    subject: np.ndarray,
+    subject_ids: list[int] | None = None,
+) -> pd.DataFrame:
+    """Analyze per-subject misclassification counts and error rate.
+
+    Parameters
+    ----------
+    y_true : np.ndarray
+        True labels.
+    y_pred : np.ndarray
+        Predicted labels.
+    subject : np.ndarray
+        Subject id per sample.
+    subject_ids : list[int] | None
+        Subset of subjects.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns: subject, support, n_errors, error_rate, misclass_details.
+    """
+    unique_subjects = sorted(np.unique(subject).tolist())
+    if subject_ids is not None:
+        unique_subjects = [s for s in unique_subjects if s in subject_ids]
+
+    records: list[dict[str, Any]] = []
+    for sid in unique_subjects:
+        mask = subject == sid
+        yt = y_true[mask]
+        yp = y_pred[mask]
+        if len(yt) == 0:
+            continue
+
+        errors = yt != yp
+        n_errors = int(errors.sum())
+        error_rate = float(n_errors / len(yt))
+
+        misclass_details: str = ""
+        for true_label in sorted(set(yt.tolist())):
+            mask_true = yt == true_label
+            preds = yp[mask_true]
+            n_wrong = int((preds != true_label).sum())
+            if n_wrong > 0:
+                top_wrong = sorted(
+                    [(int(l), int((preds == l).sum())) for l in set(preds.tolist()) if l != true_label],
+                    key=lambda x: -x[1],
+                )[:3]
+                details = ", ".join(f"pred→{l}:{c}" for l, c in top_wrong)
+                misclass_details += f"true={true_label} [{details}]; "
+
+        records.append(
+            {
+                "subject": sid,
+                "support": int(len(yt)),
+                "n_errors": n_errors,
+                "error_rate": round(error_rate, 4),
+                "misclass_details": misclass_details.strip("; "),
+            }
+        )
+
+    return pd.DataFrame(records)
+
+
 def save_classification_report(
     y_true: np.ndarray,
     y_pred: np.ndarray,

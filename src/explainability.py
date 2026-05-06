@@ -5,6 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import matplotlib
+
+matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -59,6 +62,86 @@ def compute_permutation_importance(
     return df
 
 
+def compute_loso_permutation_importance(
+    X: np.ndarray,
+    y: np.ndarray,
+    subject: np.ndarray,
+    model: Any,
+    feature_names: list[str],
+    feature_pipeline_config: dict[str, Any],
+    n_repeats: int = 5,
+    random_state: int = 42,
+    scoring: str = "balanced_accuracy",
+) -> pd.DataFrame:
+    """Compute held-out permutation importance across LOSO folds.
+
+    Each fold trains on all subjects except one, computes permutation
+    importance only on the held-out subject, then aggregates importance in
+    the original feature space. This is slower than fitting on all data, but
+    it avoids reporting explanations from a model evaluated on its own
+    training samples.
+    """
+    if feature_pipeline_config.get("pca_variance") is not None or feature_pipeline_config.get("pca_components") is not None:
+        raise ValueError("LOSO permutation importance cannot map PCA components back to original features.")
+
+    from src.models import _apply_feature_pipeline_fold, _fresh_estimator
+
+    subjects = sorted(np.unique(subject).tolist())
+    n_features = len(feature_names)
+    fold_values = np.zeros((len(subjects), n_features), dtype=float)
+    fold_selected = np.zeros((len(subjects), n_features), dtype=bool)
+
+    for fold_idx, test_subj in enumerate(subjects):
+        train_idx = subject != test_subj
+        test_idx = subject == test_subj
+
+        X_train, X_test = X[train_idx], X[test_idx]
+        y_train, y_test = y[train_idx], y[test_idx]
+
+        X_train_t, X_test_t, selected_idx = _apply_feature_pipeline_fold(
+            X_train=X_train,
+            y_train=y_train,
+            X_test=X_test,
+            pipeline_config=feature_pipeline_config,
+        )
+
+        clf = _fresh_estimator(model)
+        clf.fit(X_train_t, y_train)
+
+        result = permutation_importance(
+            clf,
+            X_test_t,
+            y_test,
+            n_repeats=n_repeats,
+            random_state=random_state + fold_idx,
+            scoring=scoring,
+            n_jobs=1,
+        )
+
+        fold_values[fold_idx, selected_idx] = result.importances_mean
+        fold_selected[fold_idx, selected_idx] = True
+
+    records = []
+    for idx, name in enumerate(feature_names):
+        values = fold_values[:, idx]
+        selected_count = int(fold_selected[:, idx].sum())
+        records.append(
+            {
+                "feature": name,
+                "importance_mean": float(np.mean(values)),
+                "importance_std": float(np.std(values, ddof=1)) if len(values) > 1 else 0.0,
+                "selected_folds": selected_count,
+                "selection_rate": float(selected_count / max(len(subjects), 1)),
+            }
+        )
+
+    return (
+        pd.DataFrame(records)
+        .sort_values(["importance_mean", "selection_rate"], ascending=[False, False])
+        .reset_index(drop=True)
+    )
+
+
 def plot_permutation_importance(
     imp_df: pd.DataFrame,
     output_path: str | Path,
@@ -82,7 +165,7 @@ def plot_permutation_importance(
     ax.set_yticks(y_pos)
     ax.set_yticklabels(plot_df["feature"].values)
     ax.invert_yaxis()
-    ax.set_xlabel("Mean accuracy decrease")
+    ax.set_xlabel("Mean score decrease")
     ax.set_title(f"Permutation Feature Importance (top {top_n})")
     fig.tight_layout()
 

@@ -9,12 +9,18 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from sklearn.base import clone
+from sklearn.base import BaseEstimator, ClassifierMixin, clone
 from sklearn.decomposition import PCA
 from sklearn.feature_selection import SelectKBest, f_classif, mutual_info_classif
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+from sklearn.metrics import (
+    accuracy_score,
+    balanced_accuracy_score,
+    f1_score,
+    precision_score,
+    recall_score,
+)
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import RobustScaler, StandardScaler
 from sklearn.svm import SVC
@@ -58,7 +64,9 @@ def resolve_backend(backend: str = "auto") -> str:
     """Resolve backend choice to either 'cpu' or 'gpu'.
 
     backend='auto' uses GPU when cuML is available.
-    backend='gpu' requires cuML and raises when unavailable.
+    backend='gpu' uses cuML for sklearn-style estimators when available. If
+    cuML is unavailable but Torch CUDA is available, sklearn-style estimators
+    still run on CPU while Torch estimators use CUDA.
     """
     backend_normalized = backend.strip().lower()
     if backend_normalized not in {"auto", "cpu", "gpu"}:
@@ -69,6 +77,8 @@ def resolve_backend(backend: str = "auto") -> str:
 
     if backend_normalized == "gpu":
         if not _HAS_CUML:
+            if _HAS_TORCH and torch.cuda.is_available():
+                return "cpu"
             raise ImportError(
                 "GPU backend requested but cuML is unavailable. "
                 "Install RAPIDS/cuML for your CUDA version. "
@@ -85,6 +95,7 @@ def get_backend_status() -> dict[str, Any]:
         "cuml_available": _HAS_CUML,
         "auto_backend": "gpu" if _HAS_CUML else "cpu",
         "cuml_import_error": _CUML_IMPORT_ERROR,
+        "torch_cuda_available": bool(_HAS_TORCH and torch.cuda.is_available()),
     }
 
 
@@ -139,13 +150,44 @@ def get_enhanced_models(random_state: int = 42, backend: str = "auto") -> dict[s
                 random_state=random_state,
             ),
         }
+        if _HAS_TORCH:
+            models["Torch MLP"] = TorchMLPClassifier(
+                hidden_layer_sizes=(256, 96),
+                epochs=35,
+                batch_size=4096,
+                class_weight=None,
+                device="auto",
+                random_state=random_state,
+            )
+            models["Torch MLP Balanced"] = TorchMLPClassifier(
+                hidden_layer_sizes=(256, 96),
+                epochs=35,
+                batch_size=4096,
+                class_weight="balanced",
+                device="auto",
+                random_state=random_state,
+            )
         return models
 
     models = {
         "SVM": SVC(kernel="rbf", probability=True, random_state=random_state),
         "SVM Tuned": SVC(C=6.0, kernel="rbf", gamma="scale", probability=True, random_state=random_state),
+        "SVM Balanced": SVC(
+            C=6.0,
+            kernel="rbf",
+            gamma="scale",
+            class_weight="balanced",
+            probability=True,
+            random_state=random_state,
+        ),
         "Logistic Regression": LogisticRegression(max_iter=1000, random_state=random_state),
         "Logistic Regression Tuned": LogisticRegression(C=2.0, max_iter=1000, random_state=random_state),
+        "Logistic Regression Balanced": LogisticRegression(
+            C=2.0,
+            class_weight="balanced",
+            max_iter=1000,
+            random_state=random_state,
+        ),
         "MLP": MLPClassifier(
             hidden_layer_sizes=(200, 80),
             max_iter=700,
@@ -153,6 +195,23 @@ def get_enhanced_models(random_state: int = 42, backend: str = "auto") -> dict[s
             random_state=random_state,
         ),
     }
+    if _HAS_TORCH:
+        models["Torch MLP"] = TorchMLPClassifier(
+            hidden_layer_sizes=(256, 96),
+            epochs=35,
+            batch_size=4096,
+            class_weight=None,
+            device="auto",
+            random_state=random_state,
+        )
+        models["Torch MLP Balanced"] = TorchMLPClassifier(
+            hidden_layer_sizes=(256, 96),
+            epochs=35,
+            batch_size=4096,
+            class_weight="balanced",
+            device="auto",
+            random_state=random_state,
+        )
     return models
 
 
@@ -543,6 +602,127 @@ if _HAS_TORCH:
             return self.classifier(last_hidden)
 
 
+if _HAS_TORCH:
+    class TorchMLPClassifier(BaseEstimator, ClassifierMixin):
+        """Sklearn-compatible tabular MLP backed by PyTorch/CUDA."""
+
+        def __init__(
+            self,
+            hidden_layer_sizes: tuple[int, ...] = (256, 96),
+            dropout: float = 0.2,
+            epochs: int = 40,
+            batch_size: int = 4096,
+            learning_rate: float = 1e-3,
+            weight_decay: float = 1e-4,
+            class_weight: str | None = None,
+            device: str = "auto",
+            random_state: int = 42,
+            verbose: bool = False,
+        ) -> None:
+            self.hidden_layer_sizes = hidden_layer_sizes
+            self.dropout = dropout
+            self.epochs = epochs
+            self.batch_size = batch_size
+            self.learning_rate = learning_rate
+            self.weight_decay = weight_decay
+            self.class_weight = class_weight
+            self.device = device
+            self.random_state = random_state
+            self.verbose = verbose
+
+        def _build_model(self, input_size: int, n_classes: int):
+            layers: list[Any] = []
+            prev_size = input_size
+            for hidden_size in self.hidden_layer_sizes:
+                layers.append(nn.Linear(prev_size, hidden_size))
+                layers.append(nn.BatchNorm1d(hidden_size))
+                layers.append(nn.ReLU())
+                layers.append(nn.Dropout(float(self.dropout)))
+                prev_size = hidden_size
+            layers.append(nn.Linear(prev_size, n_classes))
+            return nn.Sequential(*layers)
+
+        def fit(self, X: np.ndarray, y: np.ndarray):
+            resolved_device = _resolve_torch_device(self.device)
+            torch.manual_seed(int(self.random_state))
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(int(self.random_state))
+
+            X_np = np.asarray(X, dtype=np.float32)
+            y_np = np.asarray(y)
+            self.classes_ = np.asarray(sorted(np.unique(y_np).tolist()))
+            label_to_idx = {label: idx for idx, label in enumerate(self.classes_.tolist())}
+            y_idx = np.asarray([label_to_idx[label] for label in y_np], dtype=np.int64)
+
+            dataset = TensorDataset(
+                torch.tensor(X_np, dtype=torch.float32),
+                torch.tensor(y_idx, dtype=torch.long),
+            )
+            generator = torch.Generator()
+            generator.manual_seed(int(self.random_state))
+            loader = DataLoader(
+                dataset,
+                batch_size=int(self.batch_size),
+                shuffle=True,
+                generator=generator,
+                pin_memory=(resolved_device == "cuda"),
+            )
+
+            self.model_ = self._build_model(X_np.shape[1], len(self.classes_)).to(resolved_device)
+
+            weight_tensor = None
+            if self.class_weight == "balanced":
+                counts = np.bincount(y_idx, minlength=len(self.classes_)).astype(np.float32)
+                weights = counts.sum() / (len(self.classes_) * np.maximum(counts, 1.0))
+                weight_tensor = torch.tensor(weights, dtype=torch.float32).to(resolved_device)
+
+            criterion = nn.CrossEntropyLoss(weight=weight_tensor)
+            optimizer = torch.optim.AdamW(
+                self.model_.parameters(),
+                lr=float(self.learning_rate),
+                weight_decay=float(self.weight_decay),
+            )
+
+            self.model_.train()
+            for epoch in range(int(self.epochs)):
+                running_loss = 0.0
+                for xb, yb in loader:
+                    xb = xb.to(resolved_device, non_blocking=True)
+                    yb = yb.to(resolved_device, non_blocking=True)
+                    optimizer.zero_grad(set_to_none=True)
+                    logits = self.model_(xb)
+                    loss = criterion(logits, yb)
+                    loss.backward()
+                    optimizer.step()
+                    running_loss += float(loss.detach().cpu())
+                if self.verbose:
+                    print(f"TorchMLP epoch {epoch + 1}/{self.epochs}: loss={running_loss / max(len(loader), 1):.4f}")
+
+            self.device_ = resolved_device
+            return self
+
+        def predict_proba(self, X: np.ndarray) -> np.ndarray:
+            X_np = np.asarray(X, dtype=np.float32)
+            self.model_.eval()
+            probs_out: list[np.ndarray] = []
+            loader = DataLoader(
+                TensorDataset(torch.tensor(X_np, dtype=torch.float32)),
+                batch_size=int(self.batch_size),
+                shuffle=False,
+                pin_memory=(self.device_ == "cuda"),
+            )
+            with torch.no_grad():
+                for (xb,) in loader:
+                    xb = xb.to(self.device_, non_blocking=True)
+                    logits = self.model_(xb)
+                    probs_out.append(torch.softmax(logits, dim=1).cpu().numpy())
+            return np.vstack(probs_out)
+
+        def predict(self, X: np.ndarray) -> np.ndarray:
+            probs = self.predict_proba(X)
+            return self.classes_[np.argmax(probs, axis=1)]
+
+
 def run_loso_lstm(
     X: np.ndarray,
     y: np.ndarray,
@@ -753,27 +933,61 @@ def evaluate_feature_configs_loso(
     return pd.DataFrame(rows).sort_values("F1-Score", ascending=False).reset_index(drop=True)
 
 
-def compute_metrics_table(results: dict[str, dict[str, list[Any]]]) -> pd.DataFrame:
-    """Compute weighted accuracy, precision, recall and F1 for each model."""
+def compute_metrics_table(
+    results: dict[str, dict[str, list[Any]]],
+    sort_by: str = "Macro F1",
+) -> pd.DataFrame:
+    """Compute robust model metrics and sort by the chosen primary metric.
+
+    Weighted metrics are kept for backward compatibility, but Macro F1 and
+    balanced accuracy are the safer headline metrics for imbalanced WESAD
+    classes.
+    """
     records: list[dict[str, Any]] = []
 
     for name, result in results.items():
         y_true = np.asarray(result["y_true"])
         y_pred = np.asarray(result["y_pred"])
+        if len(y_true) == 0:
+            continue
+
+        weighted_precision = float(
+            precision_score(y_true, y_pred, average="weighted", zero_division=0)
+        )
+        weighted_recall = float(
+            recall_score(y_true, y_pred, average="weighted", zero_division=0)
+        )
+        weighted_f1 = float(f1_score(y_true, y_pred, average="weighted", zero_division=0))
 
         records.append(
             {
                 "Model": name,
                 "Accuracy": float(accuracy_score(y_true, y_pred)),
-                "Precision": float(
-                    precision_score(y_true, y_pred, average="weighted", zero_division=0)
+                "Balanced Accuracy": float(balanced_accuracy_score(y_true, y_pred)),
+                "Macro Precision": float(
+                    precision_score(y_true, y_pred, average="macro", zero_division=0)
                 ),
-                "Recall": float(recall_score(y_true, y_pred, average="weighted", zero_division=0)),
-                "F1-Score": float(f1_score(y_true, y_pred, average="weighted", zero_division=0)),
+                "Macro Recall": float(
+                    recall_score(y_true, y_pred, average="macro", zero_division=0)
+                ),
+                "Macro F1": float(f1_score(y_true, y_pred, average="macro", zero_division=0)),
+                "Weighted Precision": weighted_precision,
+                "Weighted Recall": weighted_recall,
+                "Weighted F1": weighted_f1,
+                # Backward-compatible aliases used by existing notebooks/scripts.
+                "Precision": weighted_precision,
+                "Recall": weighted_recall,
+                "F1-Score": weighted_f1,
             }
         )
 
-    return pd.DataFrame(records)
+    metrics = pd.DataFrame(records)
+    if metrics.empty:
+        return metrics
+
+    if sort_by in metrics.columns:
+        metrics = metrics.sort_values(sort_by, ascending=False)
+    return metrics.reset_index(drop=True)
 
 
 def save_metrics_json(metrics_df: pd.DataFrame, output_path: str | Path) -> None:

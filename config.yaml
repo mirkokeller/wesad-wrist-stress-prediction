@@ -16,6 +16,8 @@ windowing:
    acc_size_sec: 5
    physio_size_sec: 60
    shift_sec: 0.25
+   require_pure_physio_window: true
+   transition_buffer_sec: 0.0
 
 classes:
    use_3_class: true

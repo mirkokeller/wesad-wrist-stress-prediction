@@ -1,0 +1,9 @@
+              precision    recall  f1-score   support
+
+    Baseline       0.76      0.74      0.75     66859
+      Stress       0.77      0.72      0.75     36279
+   Amusement       0.30      0.37      0.33     18715
+
+    accuracy                           0.68    121853
+   macro avg       0.61      0.61      0.61    121853
+weighted avg       0.69      0.68      0.68    121853

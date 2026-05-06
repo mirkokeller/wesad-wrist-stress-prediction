@@ -1,0 +1,16 @@
+subject,support,n_errors,error_rate,misclass_details
+2,7767,2256,0.2905,"true=1 [pred→3:538, pred→2:248]; true=2 [pred→1:227, pred→3:99]; true=3 [pred→1:935, pred→2:209]"
+3,7903,4528,0.5729,"true=1 [pred→2:1111, pred→3:1089]; true=2 [pred→3:894, pred→1:431]; true=3 [pred→1:963, pred→2:40]"
+4,7943,721,0.0908,"true=1 [pred→2:12]; true=2 [pred→1:470, pred→3:16]; true=3 [pred→1:127, pred→2:96]"
+5,8151,5013,0.615,"true=1 [pred→3:2236, pred→2:1282]; true=2 [pred→1:162, pred→3:106]; true=3 [pred→2:1224, pred→1:3]"
+6,8091,3154,0.3898,"true=1 [pred→2:772, pred→3:743]; true=2 [pred→1:609, pred→3:12]; true=3 [pred→1:527, pred→2:491]"
+7,8075,2137,0.2646,"true=1 [pred→2:322, pred→3:213]; true=2 [pred→1:372]; true=3 [pred→1:1152, pred→2:78]"
+8,8119,3483,0.429,"true=1 [pred→3:1804, pred→2:69]; true=2 [pred→1:689, pred→3:270]; true=3 [pred→1:639, pred→2:12]"
+9,8071,1834,0.2272,"true=1 [pred→3:446, pred→2:113]; true=2 [pred→3:676, pred→1:78]; true=3 [pred→1:521]"
+10,8391,2432,0.2898,"true=1 [pred→3:604, pred→2:72]; true=2 [pred→1:484, pred→3:23]; true=3 [pred→1:1249]"
+11,8195,1656,0.2021,"true=1 [pred→2:330, pred→3:131]; true=2 [pred→1:88]; true=3 [pred→1:964, pred→2:143]"
+13,8187,1557,0.1902,"true=1 [pred→2:131]; true=2 [pred→1:137]; true=3 [pred→1:1060, pred→2:229]"
+14,8191,3973,0.485,"true=1 [pred→3:1664, pred→2:2]; true=2 [pred→1:1692, pred→3:597]; true=3 [pred→1:18]"
+15,8215,1421,0.173,"true=1 [pred→3:377, pred→2:5]; true=2 [pred→3:698, pred→1:103]; true=3 [pred→1:236, pred→2:2]"
+16,8167,2106,0.2579,true=1 [pred→3:2026]; true=2 [pred→1:32]; true=3 [pred→1:48]
+17,8387,3034,0.3618,"true=1 [pred→2:547, pred→3:461]; true=2 [pred→1:1092, pred→3:52]; true=3 [pred→1:785, pred→2:97]"

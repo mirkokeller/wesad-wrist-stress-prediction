@@ -9,6 +9,7 @@ __pycache__/
 
 # Model artifacts
 *.joblib
+experiments/run_*/loso_results*.npz
 
 # Data
 data/01_raw/**
@@ -21,3 +22,6 @@ data/03_processed/**
 # Experiment outputs
 experiments/run_*/figures/**
 !experiments/run_*/figures/.gitkeep
+
+# Course documents and local briefs
+documents/*.pdf

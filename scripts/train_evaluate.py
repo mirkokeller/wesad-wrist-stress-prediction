@@ -37,13 +37,95 @@ from src.evaluation import (
     compute_per_subject_metrics,
     compute_binary_metrics,
     compute_binary_per_subject,
+    compute_subject_error_analysis,
     save_metrics,
     save_classification_report,
+    save_confusion_matrix_csv,
 )
 from src.explainability import (
-    compute_permutation_importance,
+    compute_loso_permutation_importance,
     plot_permutation_importance,
+    plot_confusion_matrix_grid,
+    plot_subject_error_analysis,
 )
+
+
+MULTICLASS_LABEL_NAMES = {1: "Baseline", 2: "Stress", 3: "Amusement"}
+BINARY_LABEL_NAMES = {0: "Non-stress", 1: "Stress"}
+
+
+def _is_torch_model(model: object) -> bool:
+    """Return True for project estimators that actually train with PyTorch."""
+    return model.__class__.__name__ == "TorchMLPClassifier"
+
+
+def _best_model_name(metrics_df: pd.DataFrame, primary_metric: str = "Macro F1") -> str | None:
+    """Return the model name with the strongest validation metric."""
+    if metrics_df.empty:
+        return None
+    metric = primary_metric if primary_metric in metrics_df.columns else "F1-Score"
+    best_idx = metrics_df[metric].astype(float).idxmax()
+    return str(metrics_df.loc[best_idx, "Model"])
+
+
+def _save_model_diagnostics(
+    results: dict[str, dict[str, list]],
+    metrics_df: pd.DataFrame,
+    output_dir: Path,
+    label_names: dict[int, str],
+    prefix: str,
+) -> str | None:
+    """Save per-model reports, confusion matrices, and error tables."""
+    reports_dir = output_dir / "reports"
+    cms_dir = output_dir / "confusion_matrices"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    cms_dir.mkdir(parents=True, exist_ok=True)
+
+    for model_name, result in results.items():
+        yt = np.array(result["y_true"])
+        yp = np.array(result["y_pred"])
+        if len(yt) == 0:
+            continue
+
+        safe_name = model_name.lower().replace(" ", "_")
+        save_classification_report(
+            yt,
+            yp,
+            reports_dir / f"{prefix}_{safe_name}_classification_report.txt",
+            label_names=label_names,
+        )
+        save_confusion_matrix_csv(
+            yt,
+            yp,
+            cms_dir / f"{prefix}_{safe_name}_confusion_matrix.csv",
+            label_names=label_names,
+        )
+        save_confusion_matrix_csv(
+            yt,
+            yp,
+            cms_dir / f"{prefix}_{safe_name}_confusion_matrix_normalized.csv",
+            label_names=label_names,
+            normalize=True,
+        )
+
+        if result.get("subject"):
+            error_df = compute_subject_error_analysis(yt, yp, np.array(result["subject"]))
+            error_df.to_csv(
+                output_dir / f"{prefix}_subject_error_{safe_name}.csv",
+                index=False,
+            )
+
+    best_model = _best_model_name(metrics_df)
+    if best_model and best_model in results:
+        best_result = results[best_model]
+        report = save_classification_report(
+            np.array(best_result["y_true"]),
+            np.array(best_result["y_pred"]),
+            output_dir / f"{prefix}_best_classification_report.txt",
+            label_names=label_names,
+        )
+        print(f"\nBest {prefix} model: {best_model}\n{report}")
+    return best_model
 
 
 def main() -> None:
@@ -85,6 +167,47 @@ def main() -> None:
         default=42,
         help="Random seed.",
     )
+    parser.add_argument(
+        "--scaler",
+        type=str,
+        default="robust",
+        choices=["robust", "standard"],
+        help="Fold-wise scaler fitted only on training subjects.",
+    )
+    parser.add_argument(
+        "--selection-k",
+        type=int,
+        default=24,
+        help="Number of fold-wise selected features. Use 0 to disable selection.",
+    )
+    parser.add_argument(
+        "--selection-method",
+        type=str,
+        default="f_classif",
+        choices=["f_classif", "mutual_info"],
+        help="Fold-wise univariate feature selection method.",
+    )
+    parser.add_argument(
+        "--models",
+        type=str,
+        default="",
+        help=(
+            "Optional comma-separated model names to run. "
+            "Example: 'Logistic Regression,Logistic Regression Balanced,MLP'."
+        ),
+    )
+    parser.add_argument(
+        "--torch-epochs",
+        type=int,
+        default=None,
+        help="Override epochs for Torch MLP models.",
+    )
+    parser.add_argument(
+        "--torch-batch-size",
+        type=int,
+        default=None,
+        help="Override batch size for Torch MLP models.",
+    )
     args = parser.parse_args()
 
     output_dir = args.output_dir
@@ -93,6 +216,11 @@ def main() -> None:
 
     # ── Load data ──────────────────────────────────────────────────────────
     print("Loading data...")
+    if not args.data_path.exists():
+        raise FileNotFoundError(
+            f"Processed feature file not found: {args.data_path}. "
+            "Place WESAD under data/01_raw/WESAD and run scripts/build_dataset.py first."
+        )
     data = np.load(str(args.data_path), allow_pickle=True)
     X, y = data["X"], data["y"]
     subject = data["subject"]
@@ -106,6 +234,28 @@ def main() -> None:
     print(f"  PyTorch: {torch_status['torch_available']}, CUDA: {torch_status['cuda_available']}")
 
     models = get_enhanced_models(random_state=args.seed, backend=args.backend)
+    if args.models.strip():
+        requested = [name.strip() for name in args.models.split(",") if name.strip()]
+        missing = [name for name in requested if name not in models]
+        if missing:
+            raise ValueError(f"Unknown model(s): {missing}. Available: {list(models)}")
+        models = {name: models[name] for name in requested}
+    elif args.backend == "gpu" and not backend_status["cuml_available"]:
+        models = {name: model for name, model in models.items() if _is_torch_model(model)}
+
+    if args.backend == "gpu" and not backend_status["cuml_available"]:
+        cpu_only = [name for name, model in models.items() if not _is_torch_model(model)]
+        if cpu_only:
+            raise RuntimeError(
+                "GPU backend requested, but cuML is not available for sklearn-style "
+                f"models: {cpu_only}. Use Torch models or install cuML/RAPIDS."
+            )
+    for model in models.values():
+        if _is_torch_model(model):
+            if args.torch_epochs is not None:
+                model.epochs = args.torch_epochs
+            if args.torch_batch_size is not None:
+                model.batch_size = args.torch_batch_size
     print(f"  Models: {list(models.keys())}")
 
     run_lstm = not args.skip_lstm and torch_status["torch_available"]
@@ -116,12 +266,15 @@ def main() -> None:
     else:
         print("  LSTM: enabled")
 
-    # ── Best feature config from notebook ──────────────────────────────────
+    # Fold-local feature pipeline. Parameters are explicit CLI choices.
     best_config = {
-        "scaler": "robust",
-        "selection_k": 24,
-        "selection_method": "f_classif",
+        "scaler": args.scaler,
+        "selection_method": args.selection_method,
+        "variance_threshold": 1e-12,
     }
+    if args.selection_k > 0:
+        best_config["selection_k"] = args.selection_k
+    print(f"  Feature pipeline: {best_config}")
 
     lstm_config = {
         "sequence_length": 8,
@@ -168,17 +321,26 @@ def main() -> None:
     save_metrics(metrics_df, output_dir / "metrics.json")
     metrics_df.to_csv(output_dir / "metrics.csv", index=False)
 
-    # Save classification report for best model
-    if not metrics_df.empty:
-        best_model = metrics_df.iloc[0]["Model"]
-        if best_model in results:
-            report = save_classification_report(
-                np.array(results[best_model]["y_true"]),
-                np.array(results[best_model]["y_pred"]),
-                output_dir / "classification_report.txt",
-                label_names={1: "Baseline", 2: "Stress", 3: "Amusement"},
-            )
-            print(f"\nClassification report ({best_model}):\n{report}")
+    best_multiclass_model = _save_model_diagnostics(
+        results=results,
+        metrics_df=metrics_df,
+        output_dir=output_dir,
+        label_names=MULTICLASS_LABEL_NAMES,
+        prefix="multiclass",
+    )
+    if best_multiclass_model and best_multiclass_model in results:
+        save_classification_report(
+            np.array(results[best_multiclass_model]["y_true"]),
+            np.array(results[best_multiclass_model]["y_pred"]),
+            output_dir / "classification_report.txt",
+            label_names=MULTICLASS_LABEL_NAMES,
+        )
+    plot_confusion_matrix_grid(
+        results,
+        output_dir / "figures" / "confusion_matrices_multiclass.png",
+        label_names=MULTICLASS_LABEL_NAMES,
+        show=False,
+    )
 
     # ── Metrics: per-subject ────────────────────────────────────────────────
     print("\nComputing per-subject metrics...")
@@ -191,27 +353,86 @@ def main() -> None:
         print(f"  {model_name}: per-subject accuracy range [{ps_df['accuracy'].min():.3f}, {ps_df['accuracy'].max():.3f}]")
 
     # ── Metrics: binary ────────────────────────────────────────────────────
-    print("\nComputing binary metrics (stress vs. non-stress)...")
-    binary_records = []
+    print("\nComputing collapsed binary metrics from multi-class predictions (diagnostic)...")
+    collapsed_binary_records = []
     for model_name, result in results.items():
         yt = np.array(result["y_true"])
         yp = np.array(result["y_pred"])
         bm = compute_binary_metrics(yt, yp, positive_label=2)
         bm["model"] = model_name
-        binary_records.append(bm)
+        bm["source"] = "collapsed_from_multiclass"
+        collapsed_binary_records.append(bm)
 
-    binary_df = pd.DataFrame(binary_records)
-    binary_df = binary_df[["model", "binary_accuracy", "binary_f1", "binary_precision",
-                           "binary_recall", "binary_specificity"]]
-    print(binary_df.to_string(index=False))
-    binary_df.to_csv(output_dir / "metrics_binary.csv", index=False)
+    collapsed_binary_df = pd.DataFrame(collapsed_binary_records)
+    collapsed_binary_df.to_csv(output_dir / "metrics_binary_from_multiclass.csv", index=False)
 
-    # Per-subject binary
-    for model_name, result in results.items():
+    print("\nRunning true binary LOSO cross-validation (stress vs. non-stress)...")
+    y_binary = (y == 2).astype(int)
+    binary_models = get_enhanced_models(random_state=args.seed, backend=args.backend)
+    if args.models.strip():
+        binary_models = {name: binary_models[name] for name in models}
+    elif args.backend == "gpu" and not backend_status["cuml_available"]:
+        binary_models = {
+            name: model for name, model in binary_models.items() if _is_torch_model(model)
+        }
+    for model in binary_models.values():
+        if _is_torch_model(model):
+            if args.torch_epochs is not None:
+                model.epochs = args.torch_epochs
+            if args.torch_batch_size is not None:
+                model.batch_size = args.torch_batch_size
+    binary_results = run_loso_cv(
+        X=X,
+        y=y_binary,
+        subject=subject,
+        models=binary_models,
+        show_progress=True,
+        backend=args.backend,
+        feature_pipeline_config=best_config,
+        include_lstm=run_lstm,
+        lstm_config=lstm_config,
+    )
+
+    binary_loso_results_path = output_dir / "loso_results_binary"
+    save_loso_results(binary_results, X, y_binary, subject, feature_names, binary_loso_results_path)
+
+    print("\nComputing true binary metrics...")
+    binary_metrics_df = compute_metrics_table(binary_results)
+    binary_extra_records = []
+    for model_name, result in binary_results.items():
+        bm = compute_binary_metrics(
+            np.array(result["y_true"]),
+            np.array(result["y_pred"]),
+            positive_label=1,
+        )
+        bm["Model"] = model_name
+        binary_extra_records.append(bm)
+
+    binary_extra_df = pd.DataFrame(binary_extra_records)
+    binary_metrics_df = binary_metrics_df.merge(binary_extra_df, on="Model", how="left")
+    print(binary_metrics_df.to_string(index=False))
+    save_metrics(binary_metrics_df, output_dir / "metrics_binary.json")
+    binary_metrics_df.to_csv(output_dir / "metrics_binary.csv", index=False)
+
+    best_binary_model = _save_model_diagnostics(
+        results=binary_results,
+        metrics_df=binary_metrics_df,
+        output_dir=output_dir,
+        label_names=BINARY_LABEL_NAMES,
+        prefix="binary",
+    )
+    plot_confusion_matrix_grid(
+        binary_results,
+        output_dir / "figures" / "confusion_matrices_binary.png",
+        label_names=BINARY_LABEL_NAMES,
+        show=False,
+    )
+
+    for model_name, result in binary_results.items():
         yt = np.array(result["y_true"])
         yp = np.array(result["y_pred"])
         subj = np.array(result["subject"])
-        ps_bin = compute_binary_per_subject(yt, yp, subj, positive_label=2)
+        ps_bin = compute_binary_per_subject(yt, yp, subj, positive_label=1)
         ps_bin.to_csv(
             output_dir / f"per_subject_binary_{model_name.lower().replace(' ', '_')}.csv",
             index=False,
@@ -225,33 +446,68 @@ def main() -> None:
 
     # ── Explainability (permutation importance) ────────────────────────────
     if not args.skip_xai:
-        print("\nRunning permutation importance (XAI)...")
-        for model_name, result in results.items():
-            if model_name == "LSTM":
-                continue  # LSTM needs sequence data
-            if not result.get("y_prob"):
+        print("\nRunning held-out LOSO permutation importance (XAI)...")
+        xai_jobs = [
+            ("multiclass", best_multiclass_model, models, y),
+            ("binary", best_binary_model, binary_models, y_binary),
+        ]
+        for task_name, model_name, model_registry, task_y in xai_jobs:
+            if not model_name or model_name == "LSTM":
+                print(f"  {task_name}: skipped fold-wise permutation importance for {model_name}")
                 continue
 
-            yt = np.array(result["y_true"])
-            subj = np.array(result["subject"])
-
-            model = models[model_name]
-            clf = model.__class__(**model.get_params())
-            clf.fit(X, y)
-
-            imp_df = compute_permutation_importance(
-                clf, X, y, feature_names, n_repeats=2, random_state=args.seed,
+            model = model_registry[model_name]
+            imp_df = compute_loso_permutation_importance(
+                X=X,
+                y=task_y,
+                subject=subject,
+                model=model,
+                feature_names=feature_names,
+                feature_pipeline_config=best_config,
+                n_repeats=2,
+                random_state=args.seed,
+                scoring="balanced_accuracy",
             )
+            safe_name = model_name.lower().replace(" ", "_")
             imp_df.to_csv(
-                output_dir / f"perm_importance_{model_name.lower().replace(' ', '_')}.csv",
+                output_dir / f"perm_importance_loso_{task_name}_{safe_name}.csv",
                 index=False,
             )
             plot_permutation_importance(
                 imp_df,
-                output_dir / "figures" / f"perm_importance_{model_name.lower().replace(' ', '_')}.png",
+                output_dir / "figures" / f"perm_importance_loso_{task_name}_{safe_name}.png",
                 top_n=15,
+                show=False,
             )
-            print(f"  {model_name}: top feature = {imp_df.iloc[0]['feature']} ({imp_df.iloc[0]['importance_mean']:.4f})")
+            if not imp_df.empty:
+                print(
+                    f"  {task_name}/{model_name}: top held-out feature = "
+                    f"{imp_df.iloc[0]['feature']} ({imp_df.iloc[0]['importance_mean']:.4f})"
+                )
+
+    if best_multiclass_model and best_multiclass_model in results:
+        error_df = compute_subject_error_analysis(
+            np.array(results[best_multiclass_model]["y_true"]),
+            np.array(results[best_multiclass_model]["y_pred"]),
+            np.array(results[best_multiclass_model]["subject"]),
+        )
+        plot_subject_error_analysis(
+            error_df,
+            output_dir / "figures" / "subject_error_best_multiclass.png",
+            show=False,
+        )
+
+    if best_binary_model and best_binary_model in binary_results:
+        error_df = compute_subject_error_analysis(
+            np.array(binary_results[best_binary_model]["y_true"]),
+            np.array(binary_results[best_binary_model]["y_pred"]),
+            np.array(binary_results[best_binary_model]["subject"]),
+        )
+        plot_subject_error_analysis(
+            error_df,
+            output_dir / "figures" / "subject_error_best_binary.png",
+            show=False,
+        )
 
     print(f"\nDone. All outputs saved to: {output_dir}")
 

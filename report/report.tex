@@ -1,0 +1,237 @@
+\documentclass[10pt,a4paper,twocolumn]{article}
+
+\usepackage[margin=1.55cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{microtype}
+
+\graphicspath{{../images/}{images/}}
+
+\setlist[itemize]{leftmargin=*, noitemsep, topsep=1pt}
+\setlength{\parskip}{2pt}
+\setlength{\parindent}{0pt}
+\captionsetup{font=small, labelfont=bf}
+
+\title{\vspace{-1.2cm}\textbf{Wrist Based Stress Prediction from WESAD Physiological Signals}}
+\author{Student 1 \and Student 2 \and Student 3}
+\date{}
+
+\begin{document}
+\maketitle
+\vspace{-0.8cm}
+
+\begin{abstract}
+This project studies stress detection from wrist physiological signals in the WESAD dataset. Only Empatica E4 wrist signals are used: blood volume pulse (BVP), electrodermal activity (EDA), skin temperature (TEMP), and three axis acceleration (ACC). Chest signals are not used. The main task is binary classification: stress versus non stress. The secondary task is three class classification: baseline, stress, and amusement. All results are evaluated with leave one subject out cross validation, so each test fold contains a subject not seen during training. The best binary model is a PyTorch MLP trained on GPU. It reaches 0.845 accuracy, 0.799 balanced accuracy, and 0.808 macro F1. The three class task is weaker because the amusement class is hard to separate from the other states. For this reason, the binary task is used as the main result.
+\end{abstract}
+
+\section{Problem Definition}
+
+The goal is to predict stress from wrist wearable signals. This is useful because wrist devices are easier to wear than chest devices. However, this project does not prove real world clinical stress detection. It only evaluates models on WESAD, a controlled laboratory dataset.
+
+The main machine learning task is:
+
+\begin{quote}
+\textit{Given one window of Empatica E4 wrist signals, predict whether the window belongs to stress or non stress for a subject that was not used during training.}
+\end{quote}
+
+The binary task is the main task because it matches the project objective better. The three class task is included only to test whether the model can separate amusement from the other states.
+
+\section{Data and Preprocessing}
+
+WESAD contains data from 15 valid subjects. The subjects were recorded during baseline, stress, amusement, and recovery or meditation phases. This project uses only wrist signals from the Empatica E4:
+
+\begin{itemize}
+    \item BVP sampled at 64 Hz;
+    \item EDA sampled at 4 Hz;
+    \item TEMP sampled at 4 Hz;
+    \item ACC sampled at 32 Hz.
+\end{itemize}
+
+All RespiBAN chest signals are excluded. The processed dataset contains 121,853 windows from 15 subjects. Table~\ref{tab:data} shows the class distribution.
+
+\begin{table}[t]
+\centering
+\caption{Processed wrist dataset after removing mixed label windows.}
+\label{tab:data}
+\small
+\begin{tabular}{@{}lrr@{}}
+\toprule
+Class & Label & Windows \\
+\midrule
+Baseline & 1 & 66,859 \\
+Stress & 2 & 36,279 \\
+Amusement & 3 & 18,715 \\
+\midrule
+Total & - & 121,853 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+ACC features are extracted from 5 s windows. BVP, EDA, and TEMP features are extracted from 60 s windows. The window shift is 0.25 s. A 60 s physiological window is used only if the full window has the same protocol label. This reduces transition leakage. For example, a stress window is not allowed to contain part of the previous baseline period.
+
+\textbf{Data checks.} All 15 subject files were found. All four wrist modalities were present for every subject. Signal durations matched the label duration. The final feature matrix has no missing values and no infinite values. During the audit, two feature problems were fixed: the BVP LF/HF ratio was limited when HF power was near zero, and ACC peak frequency ignored the zero frequency FFT component.
+
+\section{Features and Models}
+
+The pipeline uses hand crafted features from wrist signals. ACC features include axis statistics, magnitude statistics, range, standard deviation, and peak frequency. BVP features include heart rate, heart rate variability, spectral HRV power, LF/HF ratio, sample entropy, and peak count. EDA features include raw statistics and approximate tonic and phasic components. TEMP features include basic statistics.
+
+Feature selection is done inside each training fold. The test subject is not used to fit the scaler or the feature selector. The default pipeline uses robust scaling, removes constant features, and selects the top 24 features with ANOVA F score.
+
+The final GPU models are:
+
+\begin{itemize}
+    \item \textbf{Torch MLP}: a tabular neural network trained with PyTorch on CUDA;
+    \item \textbf{Torch MLP Balanced}: the same model with class weights.
+\end{itemize}
+
+The balanced model is included because the classes are not equally frequent. The report focuses on the two PyTorch models because they were used in the final full GPU run.
+
+\section{Evaluation Protocol}
+
+The evaluation uses leave one subject out cross validation. In each fold, one subject is used for testing and the other 14 subjects are used for training. This split is required because windows from the same subject are highly related. A random window split would give too optimistic results.
+
+The main metrics are macro F1 and balanced accuracy. These metrics are more useful than plain accuracy when classes are imbalanced. Accuracy and weighted F1 are also reported for comparison.
+
+\section{Results}
+
+\subsection{Binary Task}
+
+The binary task groups baseline and amusement into non stress. Stress is the positive class. Table~\ref{tab:binary} shows the results.
+
+\begin{table}[t]
+\centering
+\caption{Binary LOSO results. P and R refer to the stress class.}
+\label{tab:binary}
+\footnotesize
+\setlength{\tabcolsep}{2.2pt}
+\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}lccccc@{}}
+\toprule
+Model & Acc. & Bal. & Mac. F1 & P & R \\
+\midrule
+Torch MLP & \textbf{0.845} & 0.799 & \textbf{0.808} & \textbf{0.771} & 0.683 \\
+Torch MLP Bal. & 0.837 & \textbf{0.800} & 0.803 & 0.735 & \textbf{0.709} \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+The best binary model by macro F1 is Torch MLP. It has stress F1 = 0.724 and specificity = 0.914. The balanced model has higher stress recall, but lower precision and lower macro F1. This means it finds more stress windows, but also creates more false stress predictions.
+
+\begin{figure*}[t]
+\centering
+\begin{minipage}{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth]{confusion_matrices_binary.png}
+\small (a) Binary task
+\end{minipage}\hfill
+\begin{minipage}{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth]{confusion_matrices_multiclass.png}
+\small (b) Three class task
+\end{minipage}
+\caption{Confusion matrices for the final Torch models. The binary task is cleaner because the main error is the trade off between missed stress and false stress alarms. The three class task shows a weaker separation of amusement, which supports reporting it as secondary.}
+\label{fig:confusion}
+\end{figure*}
+
+Figure~\ref{fig:confusion} shows that the main binary model correctly detects 24,788 stress windows and misses 11,491 stress windows. It also predicts 7,375 non stress windows as stress. These numbers are needed because accuracy alone does not show the cost of missed stress events and false alarms.
+
+\subsection{Three Class Task}
+
+The three class task uses baseline, stress, and amusement as separate classes. Table~\ref{tab:multiclass} shows the results.
+
+\begin{table}[t]
+\centering
+\caption{Three class LOSO results: baseline, stress, and amusement.}
+\label{tab:multiclass}
+\footnotesize
+\setlength{\tabcolsep}{2.6pt}
+\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}lcccc@{}}
+\toprule
+Model & Acc. & Bal. & Mac. F1 & W. F1 \\
+\midrule
+Torch MLP Bal. & 0.677 & \textbf{0.610} & \textbf{0.609} & \textbf{0.684} \\
+Torch MLP & \textbf{0.684} & 0.583 & 0.590 & 0.679 \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+The best three class model has F1 = 0.75 for baseline, F1 = 0.75 for stress, and F1 = 0.33 for amusement. This shows that the model has trouble separating amusement. The multiclass confusion matrix in Figure~\ref{fig:confusion} makes this limitation visible, so the three class task is reported as secondary.
+
+\section{Critical Analysis}
+
+The selected features often include BVP heart rate and HRV features, EDA level and range features, and ACC magnitude features. This is reasonable because stress can affect autonomic signals, and ACC can describe movement or posture.
+
+These features must not be interpreted as proof of causal stress markers. ACC can capture the experimental protocol instead of stress itself. BVP quality can change with motion or sensor contact. EDA can vary across subjects and skin conditions. Therefore, feature importance explains the trained model on WESAD, not a general medical mechanism.
+
+The figures are included for two different checks. Confusion matrices show which labels are confused. Per subject error plots show whether the average score hides weak results for specific people. Both checks are needed because a stress model can look acceptable on average while still failing for some subjects.
+
+The main limitations are:
+
+\begin{itemize}
+    \item \textbf{Small dataset:} only 15 valid subjects are available.
+    \item \textbf{Limited population:} WESAD subjects are mostly young adults.
+    \item \textbf{Protocol labels:} labels come from experiment timing, not from continuous clinical stress measurement.
+    \item \textbf{Context effects:} the model may learn task context, posture, speech, or movement.
+    \item \textbf{Overlapping windows:} many windows are very similar, so they are not independent samples.
+    \item \textbf{No external validation:} performance on real world data is unknown.
+\end{itemize}
+
+\begin{figure*}[t]
+\centering
+\begin{minipage}{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth]{subject_error_best_binary.png}
+\small (a) Binary task
+\end{minipage}\hfill
+\begin{minipage}{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth]{subject_error_best_multiclass.png}
+\small (b) Three class task
+\end{minipage}
+\caption{Per subject error rate for the best models. The variation between held out subjects shows that generalization is not uniform. This is a central limitation because the intended use case requires reliable predictions across people.}
+\label{fig:subject-error}
+\end{figure*}
+
+Figure~\ref{fig:subject-error} shows that errors are not equally distributed across subjects. This is important because a wearable stress model should work reliably across people, not only on average.
+
+Physiological signals are sensitive personal data. A real system would need explicit consent, secure storage, data minimization, monitoring for model drift, and clear communication that the output is not a medical diagnosis.
+
+\section{Conclusion}
+
+The project is coherent when it is presented as wrist based WESAD stress classification with subject independent evaluation. The strongest result is the binary task. The best Torch MLP reaches 0.845 accuracy, 0.799 balanced accuracy, and 0.808 macro F1.
+
+The three class task is weaker because amusement is difficult to classify. This result should be presented as a limitation. The model is not ready for clinical use or real world deployment. The pipeline is acceptable for an academic experiment because it uses only wrist signals, avoids subject leakage, removes mixed label transition windows, reports balanced metrics, and discusses the main risks.
+
+\section*{Contributions}
+
+\begin{tabularx}{\linewidth}{lX}
+\toprule
+Student 1 & Data loading, preprocessing, and feature extraction. \\
+Student 2 & Model training, LOSO evaluation, and GPU experiments. \\
+Student 3 & Explainability, error analysis, documentation, and report. \\
+\bottomrule
+\end{tabularx}
+
+\begin{thebibliography}{9}
+
+\bibitem{wesad}
+P. Schmidt, A. Reiss, R. Duerichen, C. Marberger, and K. Van Laerhoven.
+\textit{Introducing WESAD, a Multimodal Dataset for Wearable Stress and Affect Detection}.
+ICMI, 2018.
+
+\bibitem{kreibig}
+S. D. Kreibig.
+\textit{Autonomic nervous system activity in emotion: A review}.
+Biological Psychology, 2010.
+
+\bibitem{healey}
+J. A. Healey and R. W. Picard.
+\textit{Detecting stress during real world driving tasks using physiological sensors}.
+IEEE Transactions on Intelligent Transportation Systems, 2005.
+
+\end{thebibliography}
+
+\end{document}

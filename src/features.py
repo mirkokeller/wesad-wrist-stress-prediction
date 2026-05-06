@@ -110,6 +110,8 @@ def acc_features(acc_window: np.ndarray, fs: float = 32.0) -> dict[str, float]:
         fft_vals = np.fft.rfft(a)
         freqs = np.fft.rfftfreq(n, d=1.0 / fs)
         magnitudes = np.abs(fft_vals)
+        if len(magnitudes) > 0:
+            magnitudes[0] = 0.0
         peak_idx = int(np.argmax(magnitudes))
         features[f"acc_{axis}_peak_freq"] = float(freqs[peak_idx])
 
@@ -126,6 +128,8 @@ def acc_features(acc_window: np.ndarray, fs: float = 32.0) -> dict[str, float]:
     fft_vals = np.fft.rfft(mag)
     freqs = np.fft.rfftfreq(n, d=1.0 / fs)
     magnitudes = np.abs(fft_vals)
+    if len(magnitudes) > 0:
+        magnitudes[0] = 0.0
     peak_idx = int(np.argmax(magnitudes))
     features["acc_mag_peak_freq"] = float(freqs[peak_idx])
 
@@ -134,7 +138,11 @@ def acc_features(acc_window: np.ndarray, fs: float = 32.0) -> dict[str, float]:
 
 # ── BVP features (manual peak detection) ----------------------------------------
 
-def _find_peaks_improved(signal: np.ndarray, fs: float, min_distance_s: float = 0.3) -> np.ndarray:
+def _find_peaks_improved(
+    signal: np.ndarray,
+    fs: float,
+    min_distance_s: float = 0.3,
+) -> tuple[np.ndarray, int]:
     """Improved peak detector for PPG using scipy's find_peaks with adaptive thresholds.
 
     Parameters
@@ -154,7 +162,7 @@ def _find_peaks_improved(signal: np.ndarray, fs: float, min_distance_s: float = 
     sig = signal.ravel()
 
     if len(sig) < 2:
-        return np.array([], dtype=int)
+        return np.array([], dtype=int), 0
 
     # Preprocess: remove baseline drift using detrending
     from scipy import signal as scipy_signal
@@ -229,6 +237,14 @@ def bvp_features(bvp_window: np.ndarray, fs: float = 64.0) -> dict[str, float]:
 
     # HR from inter-peak intervals (in seconds)
     peak_diffs = np.diff(peaks) / fs
+    raw_hr = 60.0 / peak_diffs
+    plausible = (raw_hr >= 40.0) & (raw_hr <= 200.0)
+    peak_diffs = peak_diffs[plausible]
+    if len(peak_diffs) < 2:
+        features = {k: 0.0 for k in _BVP_FEATURE_KEYS}
+        features["bvp_peak_count"] = float(peak_count)
+        return features
+
     hr = 60.0 / peak_diffs
     features["bvp_hr_mean"] = float(np.mean(hr))
     features["bvp_hr_std"] = float(np.std(hr, ddof=1)) if len(hr) > 1 else 0.0
@@ -289,7 +305,10 @@ def bvp_features(bvp_window: np.ndarray, fs: float = 64.0) -> dict[str, float]:
             # LF/HF ratio (classic stress indicator)
             lf = features["bvp_hrv_lf"]
             hf = features["bvp_hrv_hf"]
-            features["bvp_hrv_lf_hf_ratio"] = float(lf / hf) if hf > 0 else 0.0
+            if hf <= 1e-6:
+                features["bvp_hrv_lf_hf_ratio"] = 0.0
+            else:
+                features["bvp_hrv_lf_hf_ratio"] = float(np.clip(lf / hf, 0.0, 1000.0))
         else:
             for band in ["ulf", "lf", "hf", "uhf"]:
                 features[f"bvp_hrv_{band}"] = 0.0

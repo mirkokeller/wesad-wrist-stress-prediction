@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import (
     accuracy_score,
+    balanced_accuracy_score,
     classification_report,
     confusion_matrix,
     f1_score,
@@ -106,6 +107,7 @@ def compute_binary_metrics(
 
     return {
         "binary_accuracy": float(accuracy_score(y_true_bin, y_pred_bin)),
+        "binary_balanced_accuracy": float(balanced_accuracy_score(y_true_bin, y_pred_bin)),
         "binary_precision": float(precision_score(y_true_bin, y_pred_bin, zero_division=0)),
         "binary_recall": float(recall_score(y_true_bin, y_pred_bin, zero_division=0)),
         "binary_f1": float(f1_score(y_true_bin, y_pred_bin, zero_division=0)),
@@ -218,11 +220,48 @@ def save_classification_report(
     label_names: dict[int, str] | None = None,
 ) -> str:
     """Save sklearn classification_report to a text file and return it."""
+    labels = list(label_names.keys()) if label_names else None
     report = classification_report(
-        y_true, y_pred, target_names=list(label_names.values()) if label_names else None,
+        y_true,
+        y_pred,
+        labels=labels,
+        target_names=list(label_names.values()) if label_names else None,
         zero_division=0,
     )
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(report, encoding="utf-8")
     return report
+
+
+def save_confusion_matrix_csv(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    output_path: str | Path,
+    label_names: dict[int, str] | None = None,
+    normalize: bool = False,
+) -> pd.DataFrame:
+    """Save a confusion matrix as CSV and return it as a dataframe."""
+    if label_names:
+        labels = list(label_names.keys())
+        names = [label_names[label] for label in labels]
+    else:
+        labels = sorted(set(np.asarray(y_true).tolist()) | set(np.asarray(y_pred).tolist()))
+        names = [str(label) for label in labels]
+
+    cm = confusion_matrix(y_true, y_pred, labels=labels)
+    if normalize:
+        row_sums = cm.sum(axis=1, keepdims=True)
+        cm_values = np.divide(cm, row_sums, out=np.zeros_like(cm, dtype=float), where=row_sums != 0)
+    else:
+        cm_values = cm
+
+    df = pd.DataFrame(
+        cm_values,
+        index=[f"true_{name}" for name in names],
+        columns=[f"pred_{name}" for name in names],
+    )
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(path)
+    return df

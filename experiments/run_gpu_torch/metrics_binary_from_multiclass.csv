@@ -1,0 +1,3 @@
+binary_accuracy,binary_balanced_accuracy,binary_precision,binary_recall,binary_f1,binary_specificity,binary_support_positive,binary_support_negative,model,source
+0.8519855891935365,0.8083265594293781,0.7799981582097799,0.7004051930869097,0.7380620425235274,0.9162479257718465,36279,85574,Torch MLP,collapsed_from_multiclass
+0.8543655059785151,0.8160547773295818,0.7741000384535747,0.7213539513217012,0.7467967925120567,0.9107556033374623,36279,85574,Torch MLP Balanced,collapsed_from_multiclass

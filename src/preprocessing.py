@@ -160,12 +160,17 @@ def create_windows_for_subject(
     acc_win_s: float = 5.0,
     physio_win_s: float = 60.0,
     target_labels: set[int] | None = None,
+    require_pure_physio_window: bool = True,
+    transition_buffer_s: float = 0.0,
 ) -> SubjectWindows | None:
     """Build sliding windows for one subject following the paper's segmentation.
 
     - All signals share the same 0.25 s time grid.
     - Windows are causal: [t - win_size, t].
     - The first usable window ends at ``physio_win_s``.
+    - By default, the whole physiological window must belong to the same
+      protocol label. This avoids training on a 60 s feature window whose
+      label only describes the final instant after a condition transition.
     """
     target_labels = target_labels or {1, 2, 3}
     ps = preprocess_subject(subject)
@@ -214,6 +219,23 @@ def create_windows_for_subject(
         if lbl not in target_labels:
             continue
 
+        phys_label_start_idx = int(round((t_end - physio_win_s) / shift_s))
+        phys_label_end_idx = label_idx + 1
+        if phys_label_start_idx < 0:
+            continue
+
+        if require_pure_physio_window:
+            label_slice = labels_4hz[phys_label_start_idx:phys_label_end_idx]
+            if label_slice.size == 0 or not np.all(label_slice == lbl):
+                continue
+
+        if transition_buffer_s > 0:
+            buffer_blocks = int(round(transition_buffer_s / shift_s))
+            buffer_start_idx = max(0, label_idx - buffer_blocks + 1)
+            recent_labels = labels_4hz[buffer_start_idx:phys_label_end_idx]
+            if recent_labels.size == 0 or not np.all(recent_labels == lbl):
+                continue
+
         # --- ACC window (5 s ending at t_end) --------------------------------
         acc_start_s = t_end - acc_win_s
         acc_start = int(round(acc_start_s * SIGNAL_HZ["ACC"]))
@@ -261,6 +283,11 @@ def process_all_subjects(
     subjects: list[int | str] | None = None,
     raw_dir: str | Path | None = None,
     target_labels: set[int] | None = None,
+    shift_s: float = SHIFT_S,
+    acc_win_s: float = 5.0,
+    physio_win_s: float = 60.0,
+    require_pure_physio_window: bool = True,
+    transition_buffer_s: float = 0.0,
 ) -> list[SubjectWindows]:
     """Run windowing on multiple subjects."""
     if raw_dir is None:
@@ -270,7 +297,15 @@ def process_all_subjects(
     results = []
     for sid in subjects:
         raw = load_subject(sid, raw_dir=raw_dir)
-        windows = create_windows_for_subject(raw, target_labels=target_labels)
+        windows = create_windows_for_subject(
+            raw,
+            shift_s=shift_s,
+            acc_win_s=acc_win_s,
+            physio_win_s=physio_win_s,
+            target_labels=target_labels,
+            require_pure_physio_window=require_pure_physio_window,
+            transition_buffer_s=transition_buffer_s,
+        )
         if windows is not None:
             results.append(windows)
     return results

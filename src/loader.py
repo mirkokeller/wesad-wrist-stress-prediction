@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pickle
 import re
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -41,9 +42,37 @@ def normalize_subject_id(subject: int | str) -> str:
     raise ValueError(f"Invalid subject identifier: {subject!r}")
 
 
+def resolve_raw_dir(raw_dir: str | Path = DEFAULT_RAW_DIR) -> Path:
+    """Return the directory that directly contains WESAD subject folders.
+
+    Some zip tools extract the dataset as ``WESAD/WESAD/S2/...`` while the
+    project default points to ``data/01_raw/WESAD``. Supporting both layouts
+    avoids brittle setup failures.
+    """
+    raw_path = Path(raw_dir)
+    if not raw_path.exists():
+        raise FileNotFoundError(f"Raw WESAD directory not found: {raw_path}")
+
+    has_subject_dirs = any(
+        item.is_dir() and SUBJECT_PATTERN.fullmatch(item.name)
+        for item in raw_path.iterdir()
+    )
+    if has_subject_dirs:
+        return raw_path
+
+    nested = raw_path / "WESAD"
+    if nested.exists() and any(
+        item.is_dir() and SUBJECT_PATTERN.fullmatch(item.name)
+        for item in nested.iterdir()
+    ):
+        return nested
+
+    return raw_path
+
+
 def list_subjects(raw_dir: str | Path = DEFAULT_RAW_DIR) -> list[str]:
     """Return sorted subject ids available under the raw WESAD directory."""
-    raw_path = Path(raw_dir)
+    raw_path = resolve_raw_dir(raw_dir)
     subjects = [
         item.name
         for item in raw_path.iterdir()
@@ -55,7 +84,7 @@ def list_subjects(raw_dir: str | Path = DEFAULT_RAW_DIR) -> list[str]:
 def get_subject_path(subject: int | str, raw_dir: str | Path = DEFAULT_RAW_DIR) -> Path:
     """Return the expected pickle path for a subject."""
     subject_id = normalize_subject_id(subject)
-    subject_path = Path(raw_dir) / subject_id / f"{subject_id}.pkl"
+    subject_path = resolve_raw_dir(raw_dir) / subject_id / f"{subject_id}.pkl"
     if not subject_path.exists():
         raise FileNotFoundError(f"Subject file not found: {subject_path}")
     return subject_path
@@ -65,7 +94,12 @@ def load_subject_pickle(subject: int | str, raw_dir: str | Path = DEFAULT_RAW_DI
     """Load the original WESAD pickle for a subject."""
     subject_path = get_subject_path(subject, raw_dir=raw_dir)
     with subject_path.open("rb") as handle:
-        return pickle.load(handle, encoding="latin1")
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=".*align should be passed as Python or NumPy boolean.*",
+            )
+            return pickle.load(handle, encoding="latin1")
 
 
 def load_subject(subject: int | str, raw_dir: str | Path = DEFAULT_RAW_DIR) -> SubjectData:

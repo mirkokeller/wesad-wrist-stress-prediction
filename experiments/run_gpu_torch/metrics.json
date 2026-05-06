@@ -1,0 +1,30 @@
+[
+  {
+    "Model": "Torch MLP Balanced",
+    "Accuracy": 0.677439209539363,
+    "Balanced Accuracy": 0.6096024843040574,
+    "Macro Precision": 0.6114628656890083,
+    "Macro Recall": 0.6096024843040574,
+    "Macro F1": 0.6091852765438542,
+    "Weighted Precision": 0.6924081498117566,
+    "Weighted Recall": 0.677439209539363,
+    "Weighted F1": 0.6841329705475727,
+    "Precision": 0.6924081498117566,
+    "Recall": 0.677439209539363,
+    "F1-Score": 0.6841329705475727
+  },
+  {
+    "Model": "Torch MLP",
+    "Accuracy": 0.6842506955101639,
+    "Balanced Accuracy": 0.5834337814933828,
+    "Macro Precision": 0.6010469186652646,
+    "Macro Recall": 0.5834337814933828,
+    "Macro F1": 0.5904439476959387,
+    "Weighted Precision": 0.6763661677340814,
+    "Weighted Recall": 0.6842506955101639,
+    "Weighted F1": 0.6785448970670939,
+    "Precision": 0.6763661677340814,
+    "Recall": 0.6842506955101639,
+    "F1-Score": 0.6785448970670939
+  }
+]

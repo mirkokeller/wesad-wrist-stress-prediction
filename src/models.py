@@ -1056,7 +1056,12 @@ def load_loso_results(
         y_prob_arr: list[np.ndarray] = []
         raw = data["y_prob"][i]
         if isinstance(raw, np.ndarray) and raw.ndim > 0 and len(raw) > 0:
-            y_prob_arr = [np.array(p) for p in raw] if raw.dtype == object else [raw]
+            if raw.ndim >= 2:
+                y_prob_arr = [np.asarray(raw, dtype=float)]
+            elif raw.dtype == object:
+                y_prob_arr = [np.asarray(p, dtype=float) for p in raw]
+            else:
+                y_prob_arr = [raw]
         results[name] = {
             "y_true": [int(v) for v in data["y_true"][i]],
             "y_pred": [int(v) for v in data["y_pred"][i]],

@@ -209,23 +209,7 @@ def plot_shap_summary(
         if class_names is None:
             class_names = [f"Class {i}" for i in range(n_classes)]
 
-        n_cols = min(3, n_classes)
-        n_rows = int(np.ceil(n_classes / n_cols))
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 5 * n_rows))
-        axes = np.array(axes, dtype=object).reshape(-1)
-
-        for i, (sv, name) in enumerate(zip(shap_values, class_names)):
-            shap.summary_plot(
-                sv, X, feature_names=feature_names,
-                max_display=max_display, show=False,
-            )
-            ax = plt.gca()
-            ax.set_title(name)
-            fig.add_subplot(axes.flat[i])
-            # plt.sca(axes.flat[i]) would need custom impl; use shap.plots instead:
-
-        # Fallback: save per-class summary to separate file
-        for i, (sv, name) in enumerate(zip(shap_values, class_names)):
+        for sv, name in zip(shap_values, class_names):
             class_path = path.with_stem(f"{path.stem}_{name.lower().replace(' ', '_')}")
             shap.summary_plot(
                 sv, X, feature_names=feature_names,
@@ -236,6 +220,7 @@ def plot_shap_summary(
             if show:
                 plt.show()
             plt.close()
+        return
     else:
         shap.summary_plot(
             shap_values, X, feature_names=feature_names,

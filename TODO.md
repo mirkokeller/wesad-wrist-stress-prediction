@@ -31,7 +31,7 @@
 - [x] Accuracy, Precision, Recall, F1-score (weighted) table
 - [x] Macro-F1 and balanced accuracy for imbalanced-class reporting
 - [x] Confusion matrices per model
-- [x] ROC curves (One-vs-Rest) per model
+- [x] ROC curves and AUC summaries (One-vs-Rest, saved by `save_roc_curves`)
 - [x] Metrics JSON persistence helper (`save_metrics_json`)
 - [x] Per-subject performance breakdown (`compute_per_subject_metrics`)
 - [x] True binary classification (stress vs. non-stress) LOSO training and evaluation
@@ -52,6 +52,7 @@
 - [x] `scripts/train_evaluate.py` — run full training + evaluation + XAI
 
 - [x] Best-model classification report selected by Macro-F1 instead of model insertion order
+- [x] Saved LOSO probabilities can be reloaded for ROC/AUC analysis
 
 ## Analysis Notebooks
 - [x] `01-eda.ipynb` — raw data exploration

@@ -293,10 +293,6 @@ def bvp_features(bvp_window: np.ndarray, fs: float = 64.0) -> dict[str, float]:
                 def _band_power(low: float, high: float) -> float:
                     return 0.0
 
-                # If we don't have sufficient samples, return zeros
-                def _band_power(low: float, high: float) -> float:
-                    return 0.0
-
             features["bvp_hrv_ulf"] = _band_power(0.01, 0.04)
             features["bvp_hrv_lf"] = _band_power(0.04, 0.15)
             features["bvp_hrv_hf"] = _band_power(0.15, 0.4)

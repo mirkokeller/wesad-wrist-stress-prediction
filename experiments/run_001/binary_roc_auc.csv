@@ -1,0 +1,3 @@
+task,model,class,auc
+binary,Torch MLP,Stress,0.8862112413833932
+binary,Torch MLP Balanced,Stress,0.8810185824276284

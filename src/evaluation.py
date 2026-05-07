@@ -16,6 +16,8 @@ from sklearn.metrics import (
     f1_score,
     precision_score,
     recall_score,
+    roc_auc_score,
+    roc_curve,
 )
 
 
@@ -197,7 +199,7 @@ def compute_subject_error_analysis(
                     [(int(l), int((preds == l).sum())) for l in set(preds.tolist()) if l != true_label],
                     key=lambda x: -x[1],
                 )[:3]
-                details = ", ".join(f"pred→{l}:{c}" for l, c in top_wrong)
+                details = ", ".join(f"pred->{l}:{c}" for l, c in top_wrong)
                 misclass_details += f"true={true_label} [{details}]; "
 
         records.append(
@@ -265,3 +267,119 @@ def save_confusion_matrix_csv(
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(path)
     return df
+
+
+def _stack_probabilities(prob_chunks: list[Any]) -> np.ndarray | None:
+    """Stack per-fold probability outputs from sklearn-compatible estimators."""
+    if not prob_chunks:
+        return None
+
+    arrays = []
+    for chunk in prob_chunks:
+        arr = np.asarray(chunk)
+        if arr.size == 0:
+            continue
+        if arr.ndim == 1:
+            arr = arr.reshape(1, -1)
+        arrays.append(arr)
+
+    if not arrays:
+        return None
+    return np.vstack(arrays)
+
+
+def save_roc_curves(
+    results: dict[str, dict[str, list[Any]]],
+    output_dir: str | Path,
+    label_names: dict[int, str] | None = None,
+    prefix: str = "multiclass",
+    positive_label: int | None = None,
+) -> pd.DataFrame:
+    """Save one-vs-rest ROC/AUC summary and a compact plot."""
+    out_dir = Path(output_dir)
+    fig_dir = out_dir / "figures"
+    fig_dir.mkdir(parents=True, exist_ok=True)
+
+    if label_names:
+        labels = list(label_names.keys())
+    else:
+        labels = sorted(
+            {
+                label
+                for result in results.values()
+                for label in np.asarray(result.get("y_true", [])).tolist()
+            }
+        )
+        label_names = {int(label): str(label) for label in labels}
+
+    rows: list[dict[str, Any]] = []
+    curves: list[tuple[str, str, np.ndarray, np.ndarray, float]] = []
+
+    for model_name, result in results.items():
+        y_true = np.asarray(result.get("y_true", []))
+        probs = _stack_probabilities(result.get("y_prob", []))
+        if y_true.size == 0 or probs is None or probs.shape[0] != y_true.shape[0]:
+            continue
+
+        if positive_label is not None:
+            if positive_label not in labels:
+                continue
+            class_indices = [labels.index(positive_label)]
+        else:
+            class_indices = list(range(min(len(labels), probs.shape[1])))
+        model_auc: list[float] = []
+
+        for class_idx in class_indices:
+            if class_idx >= probs.shape[1]:
+                continue
+            label = labels[class_idx]
+            y_binary = (y_true == label).astype(int)
+            if np.unique(y_binary).size < 2:
+                continue
+
+            fpr, tpr, _ = roc_curve(y_binary, probs[:, class_idx])
+            auc_value = float(roc_auc_score(y_binary, probs[:, class_idx]))
+            class_name = label_names.get(label, str(label))
+            model_auc.append(auc_value)
+            curves.append((model_name, class_name, fpr, tpr, auc_value))
+            rows.append(
+                {
+                    "task": prefix,
+                    "model": model_name,
+                    "class": class_name,
+                    "auc": auc_value,
+                }
+            )
+
+        if len(model_auc) > 1:
+            rows.append(
+                {"task": prefix, "model": model_name, "class": "macro_average", "auc": float(np.mean(model_auc))}
+            )
+
+    summary_df = pd.DataFrame(
+        rows,
+        columns=["task", "model", "class", "auc"],
+    )
+    summary_df.to_csv(out_dir / f"{prefix}_roc_auc.csv", index=False)
+
+    if curves:
+        import matplotlib
+
+        matplotlib.use("Agg", force=True)
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(7, 5))
+        for model_name, class_name, fpr, tpr, auc_value in curves:
+            ax.plot(fpr, tpr, label=f"{model_name} / {class_name}: {auc_value:.3f}")
+        ax.plot([0, 1], [0, 1], linestyle="--", color="gray", linewidth=1)
+        ax.set_xlabel("False positive rate")
+        ax.set_ylabel("True positive rate")
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.grid(alpha=0.25)
+        ax.legend(fontsize=8)
+        fig.tight_layout()
+        fig.savefig(fig_dir / f"{prefix}_roc_curves.png", dpi=150, bbox_inches="tight")
+        plt.close(fig)
+
+    return summary_df

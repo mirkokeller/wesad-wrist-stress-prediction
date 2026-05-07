@@ -41,6 +41,7 @@ from src.evaluation import (
     save_metrics,
     save_classification_report,
     save_confusion_matrix_csv,
+    save_roc_curves,
 )
 from src.explainability import (
     compute_loso_permutation_importance,
@@ -341,6 +342,15 @@ def main() -> None:
         label_names=MULTICLASS_LABEL_NAMES,
         show=False,
     )
+    multiclass_roc_df = save_roc_curves(
+        results,
+        output_dir,
+        label_names=MULTICLASS_LABEL_NAMES,
+        prefix="multiclass",
+    )
+    if not multiclass_roc_df.empty:
+        print("\nMulti-class ROC AUC:")
+        print(multiclass_roc_df.to_string(index=False))
 
     # ── Metrics: per-subject ────────────────────────────────────────────────
     print("\nComputing per-subject metrics...")
@@ -427,6 +437,16 @@ def main() -> None:
         label_names=BINARY_LABEL_NAMES,
         show=False,
     )
+    binary_roc_df = save_roc_curves(
+        binary_results,
+        output_dir,
+        label_names=BINARY_LABEL_NAMES,
+        prefix="binary",
+        positive_label=1,
+    )
+    if not binary_roc_df.empty:
+        print("\nBinary ROC AUC:")
+        print(binary_roc_df.to_string(index=False))
 
     for model_name, result in binary_results.items():
         yt = np.array(result["y_true"])

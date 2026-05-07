@@ -88,6 +88,9 @@ Train and evaluate both tasks with leave-one-subject-out validation:
 python scripts/train_evaluate.py --skip-xai
 ```
 
+The evaluation saves metrics, reports, confusion matrices, per-subject tables,
+and ROC/AUC outputs under the selected experiment directory.
+
 Remove `--skip-xai` to compute held-out LOSO permutation importance for the best
 multi-class and binary models.
 
@@ -113,6 +116,7 @@ For a faster smoke test, add for example `--torch-epochs 5`.
 - Multi-class task: baseline vs. stress vs. amusement, reported as secondary.
 - Main metrics: Macro-F1 and balanced accuracy, with weighted metrics retained
   for comparison.
+- ROC/AUC outputs are saved as CSV summaries and PNG figures.
 - `metrics_binary_from_multiclass.csv` is diagnostic only; it collapses
   multi-class predictions and should not be reported as the primary binary
   result.

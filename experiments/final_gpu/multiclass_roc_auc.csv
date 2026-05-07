@@ -1,0 +1,13 @@
+task,model,class,auc
+multiclass,Logistic Regression,Baseline,0.7315430444309384
+multiclass,Logistic Regression,Stress,0.8580478247253515
+multiclass,Logistic Regression,Amusement,0.6229303774305546
+multiclass,Logistic Regression,macro_average,0.7375070821956148
+multiclass,Torch MLP,Baseline,0.7930704558400764
+multiclass,Torch MLP,Stress,0.9130188265308476
+multiclass,Torch MLP,Amusement,0.6532480785025736
+multiclass,Torch MLP,macro_average,0.7864457869578324
+multiclass,Torch MLP Balanced,Baseline,0.7918810676900311
+multiclass,Torch MLP Balanced,Stress,0.9153754545699646
+multiclass,Torch MLP Balanced,Amusement,0.6549569437578315
+multiclass,Torch MLP Balanced,macro_average,0.7874044886726091

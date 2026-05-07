@@ -1,0 +1,8 @@
+{
+  "seed": 42,
+  "device": "cuda",
+  "scaler": "robust",
+  "selection_k": 24,
+  "torch_epochs": 35,
+  "torch_batch_size": 4096
+}

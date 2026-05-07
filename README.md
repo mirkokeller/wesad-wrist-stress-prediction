@@ -33,8 +33,7 @@ wesad-stress/
 │   ├── loader.py
 │   ├── preprocessing.py
 │   ├── features.py
-│   ├── evaluation.py
-│   └── explainability.py
+│   └── evaluation.py
 │
 ├── scripts/
 │   ├── build_dataset.py
@@ -82,17 +81,17 @@ more than one protocol label. This reduces transition leakage caused by assignin
 a window label from only the final time point. To reproduce the original,
 less strict windowing, pass `--allow-mixed-label-windows`.
 
-Train and evaluate both tasks with leave-one-subject-out validation:
+Train and evaluate both tasks with leave-one-subject-out validation on CUDA:
 
 ```bash
-python scripts/train_evaluate.py --skip-xai
+python scripts/train_evaluate.py
 ```
 
-The evaluation saves metrics, reports, confusion matrices, per-subject tables,
-and ROC/AUC outputs under the selected experiment directory.
-
-Remove `--skip-xai` to compute held-out LOSO permutation importance for the best
-multi-class and binary models.
+The final script intentionally runs a small compliant model comparison:
+`Logistic Regression`, `Linear SVM`, `Torch MLP`, and `Torch MLP Balanced`.
+The Torch models are forced onto CUDA. The script saves metrics, reports,
+confusion matrices, per-subject tables, ROC/AUC outputs where probabilities are
+available, and report-ready figures under `experiments/final_gpu`.
 
 For a CUDA run on Windows, install PyTorch CUDA first:
 
@@ -100,14 +99,13 @@ For a CUDA run on Windows, install PyTorch CUDA first:
 python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
 ```
 
-Then run the GPU-backed tabular models:
+Then run the final GPU experiment:
 
 ```bash
-python scripts/train_evaluate.py --backend gpu --skip-xai --skip-lstm --models "Torch MLP,Torch MLP Balanced"
+python scripts/train_evaluate.py
 ```
 
-On an RTX 2080 SUPER, this LOSO run took about 50 minutes for 2 Torch models,
-multi-class plus true binary evaluation.
+The script fails early if CUDA is not available for the Torch models.
 For a faster smoke test, add for example `--torch-epochs 5`.
 
 ## Evaluation Notes
@@ -120,5 +118,6 @@ For a faster smoke test, add for example `--torch-epochs 5`.
 - `metrics_binary_from_multiclass.csv` is diagnostic only; it collapses
   multi-class predictions and should not be reported as the primary binary
   result.
-- Explainability outputs use held-out LOSO folds instead of fitting a model on
-  all samples and explaining its training data.
+- The code keeps only the required final model comparison; old tuning branches,
+  LSTM code, cuML branches, and cache-heavy explainability helpers were removed
+  from `src/`.

@@ -19,7 +19,7 @@ raw WESAD subject pickles
 -> multi-class evaluation
 -> true binary stress evaluation
 -> per-subject analysis
--> ROC/AUC, confusion matrices, reports, and XAI utilities
+-> ROC/AUC, confusion matrices, reports, and report-ready figures
 ```
 
 ## Data Constraints
@@ -60,20 +60,16 @@ Mixed-label physiological windows are removed by default to reduce transition le
 
 ## Models
 
-The code supports:
+The final code intentionally supports only a small compliant comparison:
 
-- SVM
-- tuned SVM
-- balanced SVM
 - Logistic Regression
-- tuned Logistic Regression
-- balanced Logistic Regression
-- sklearn MLP
+- Linear SVM
 - PyTorch MLP
 - balanced PyTorch MLP
-- optional LSTM
 
-The final reported run focuses on the PyTorch MLP models.
+Older tuning branches, LSTM code, and cuML-specific paths were removed to keep
+the project aligned with the final reported experiment and avoid accidental
+extra runs.
 
 The prohibited original-paper models are not used in `src/` or `scripts`: Decision Tree, Random Forest, AdaBoost, LDA, and kNN.
 
@@ -103,7 +99,7 @@ The training script saves:
 - feature selection summary
 - ROC/AUC summary files
 - ROC curve figures
-- saved LOSO predictions
+- optional saved LOSO predictions when `--save-loso-arrays` is used
 
 ROC/AUC is implemented in code through `save_roc_curves`.
 
@@ -116,9 +112,10 @@ Current generated AUC summaries:
 
 ## Explainability
 
-The main robust XAI path is held-out LOSO permutation importance.
-
-SHAP helper functions are present, but they should be treated as optional utilities. The report should not depend on SHAP unless the corresponding outputs are actually generated and inspected.
+The final code keeps interpretable feature selection summaries, confusion
+matrices, ROC/AUC, and per-subject error analysis. Cache-heavy SHAP and
+permutation-importance helpers were removed because they were not part of the
+final GPU run.
 
 ## What To Claim
 

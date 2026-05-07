@@ -5,11 +5,4 @@ scikit-learn
 matplotlib
 seaborn
 tqdm
-
-# Optional GPU acceleration (NVIDIA + compatible CUDA runtime required)
-# Install these only when you need GPU training with cuML.
-# cupy-cuda12x
-# cuml-cu12
-
-# Optional deep sequence model
-# torch
+torch

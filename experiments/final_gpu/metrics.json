@@ -1,0 +1,38 @@
+[
+  {
+    "Model": "Torch MLP Balanced",
+    "Accuracy": 0.677439209539363,
+    "Balanced Accuracy": 0.6096024843040574,
+    "Macro Precision": 0.6114628656890083,
+    "Macro Recall": 0.6096024843040574,
+    "Macro F1": 0.6091852765438542,
+    "Weighted F1": 0.6841329705475727
+  },
+  {
+    "Model": "Torch MLP",
+    "Accuracy": 0.6842506955101639,
+    "Balanced Accuracy": 0.5834337814933828,
+    "Macro Precision": 0.6010469186652646,
+    "Macro Recall": 0.5834337814933828,
+    "Macro F1": 0.5904439476959387,
+    "Weighted F1": 0.6785448970670939
+  },
+  {
+    "Model": "Linear SVM",
+    "Accuracy": 0.6469270350340164,
+    "Balanced Accuracy": 0.5467473024760313,
+    "Macro Precision": 0.5412646637074953,
+    "Macro Recall": 0.5467473024760313,
+    "Macro F1": 0.5408228349171702,
+    "Weighted F1": 0.6343984253268011
+  },
+  {
+    "Model": "Logistic Regression",
+    "Accuracy": 0.6710955003159544,
+    "Balanced Accuracy": 0.5315636312766953,
+    "Macro Precision": 0.5290303661695505,
+    "Macro Recall": 0.5315636312766953,
+    "Macro F1": 0.5177689637409447,
+    "Weighted F1": 0.6375569041360222
+  }
+]

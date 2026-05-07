@@ -19,7 +19,7 @@
 \newcommand{\sectioncontrib}[1]{\textit{Contribution: #1}}
 
 \title{\vspace{-1.2cm}\textbf{Wrist Based Stress Prediction from WESAD Physiological Signals}}
-\author{Student 1 \and Student 2 \and Student 3}
+\author{Mirko Keller \and Federico Gritti \and Kadir {\"O}zden}
 \date{}
 
 \begin{document}
@@ -58,7 +58,7 @@ Total & - & 121,853 \\
 
 Only wrist data are loaded from \texttt{payload["signal"]["wrist"]}. The used signals are ACC at 32 Hz, BVP at 64 Hz, EDA at 4 Hz, and TEMP at 4 Hz. The final feature matrix has 121,853 windows, 51 features, 15 subjects, no missing values, and no infinite values.
 
-\sectioncontrib{Student 1 led data loading and data checks; Student 2 reviewed the task setup; Student 3 checked report alignment.}
+\sectioncontrib{Mirko Keller led data loading and data checks; Federico Gritti reviewed the task setup; Kadir {\"O}zden checked report alignment.}
 
 \section{Preprocessing and Features}
 
@@ -68,7 +68,7 @@ The project uses a custom feature pipeline. ACC features describe axis and magni
 
 The most stable selected features include ACC magnitude, BVP heart-rate and HRV features, and EDA level/range features. These features are useful for model interpretation, but they are not proof of causal medical markers.
 
-\sectioncontrib{Student 1 implemented preprocessing and feature extraction; Student 2 checked fold-local scaling and feature selection; Student 3 summarized feature relevance.}
+\sectioncontrib{Mirko Keller implemented preprocessing and feature extraction; Federico Gritti checked fold-local scaling and feature selection; Kadir {\"O}zden summarized feature relevance.}
 
 \section{Models and Validation}
 
@@ -85,7 +85,7 @@ Validation uses leave-one-subject-out cross-validation. In each fold, 14 subject
 
 The main metrics are macro F1 and balanced accuracy, because the classes are imbalanced. Accuracy, precision, recall, confusion matrices, per-subject errors, and ROC/AUC are also reported. ROC/AUC is computed for the probabilistic models.
 
-\sectioncontrib{Student 2 implemented the LOSO training pipeline and GPU run; Student 1 checked subject separation; Student 3 reviewed the evaluation protocol.}
+\sectioncontrib{Federico Gritti implemented the LOSO training pipeline and GPU run; Mirko Keller checked subject separation; Kadir {\"O}zden reviewed the evaluation protocol.}
 
 \section{Results}
 
@@ -153,7 +153,7 @@ Log. Reg. & 0.671 & 0.532 & 0.518 & 0.638 \\
 
 The best three-class model has F1 = 0.75 for baseline, F1 = 0.75 for stress, and F1 = 0.33 for amusement. This means the model has difficulty separating amusement from the other states. The macro AUC values are 0.787 for Torch MLP Balanced, 0.786 for Torch MLP, and 0.738 for Logistic Regression.
 
-\sectioncontrib{Student 2 generated the final metrics and figures; Student 1 checked the processed data counts; Student 3 wrote the result interpretation.}
+\sectioncontrib{Federico Gritti generated the final metrics and figures; Mirko Keller checked the processed data counts; Kadir {\"O}zden wrote the result interpretation.}
 
 \section{Critical Analysis}
 
@@ -179,7 +179,7 @@ There are several limits. WESAD has only 15 valid subjects, mostly young adults.
 
 More advanced AI could be useful with larger datasets, longer recordings, and external validation. In this project, a small MLP is enough to test the idea, but it does not make the method ready for clinical use. A real system would need consent, secure storage, data minimization, clear user communication, fairness checks, and monitoring for model drift.
 
-\sectioncontrib{Student 3 led the critical analysis; Student 1 contributed data-quality risks; Student 2 contributed model and validation risks.}
+\sectioncontrib{Kadir {\"O}zden led the critical analysis; Mirko Keller contributed data-quality risks; Federico Gritti contributed model and validation risks.}
 
 \section{Conclusion}
 
@@ -189,9 +189,9 @@ The project meets the main requirements. It uses only Empatica E4 wrist data, ex
 
 \begin{tabularx}{\linewidth}{lX}
 \toprule
-Student 1 & Data loading, preprocessing, feature extraction, and data-quality checks. \\
-Student 2 & Model implementation, LOSO validation, GPU training, and metric generation. \\
-Student 3 & Result interpretation, critical analysis, documentation, and report writing. \\
+Mirko Keller & Data loading, preprocessing, feature extraction, and data-quality checks. \\
+Federico Gritti & Model implementation, LOSO validation, GPU training, and metric generation. \\
+Kadir {\"O}zden & Result interpretation, critical analysis, documentation, and report writing. \\
 \bottomrule
 \end{tabularx}
 

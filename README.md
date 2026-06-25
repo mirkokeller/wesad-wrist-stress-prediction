@@ -1,123 +1,66 @@
-# wesad-stress
+# 🧠 Wrist-only WESAD Stress Prediction
 
-Minimal and clean structure for a wrist-only WESAD project.
+A clean, modular machine learning pipeline designed to predict human stress levels using **wrist-only biosignals** from the publicly available **WESAD (Wrist and Chest Affect Detection)** dataset.
 
-## Structure
+This repository focuses on real-world applicability by utilizing only non-invasive signals collected from the wrist, omitting chest-worn sensors.
 
-```text
-wesad-stress/
-│
-├── README.md
-├── requirements.txt
-├── .gitignore
-├── config.yaml
-│
+---
+
+## 🌟 Key Features
+
+*   **Wrist-only Biosignals**: Predicts emotional state (stress vs. baseline vs. amusement) using only:
+    *   **BVP** (Blood Volume Pulse - Photoplethysmography)
+    *   **EDA** (Electrodermal Activity - Skin Conductance)
+    *   **TEMP** (Skin Temperature)
+    *   **ACC** (3-axis Accelerometer)
+*   **Leave-One-Subject-Out (LOSO) Cross-Validation**: Implements subject-independent cross-validation to ensure models generalize accurately to unseen individuals, preventing data leakage.
+*   **Biosignal Feature Extraction**: Processes raw signals using rolling windows (e.g., 60 seconds with a 1-second step) to extract statistical features, Heart Rate Variability (HRV) from BVP, and Skin Conductance Responses (SCR) from EDA.
+*   **Multi-Model Benchmarking**: Compares performances across various classifiers including **Random Forests**, **Support Vector Machines (SVM)**, and **XGBoost**.
+
+---
+
+## 📂 Repository Structure
+
+```
 ├── data/
-│   ├── 01_raw/         # original local data
-│   ├── 02_intermediate/ # intermediate data
-│   └── 03_processed/   # model-ready data
-│
-├── documents/
-│   ├── journal-club-checklist.pdf
-│   ├── project-brief.md
-│   └── notes.txt
-│
-├── notebooks/
-│   ├── 01-eda.ipynb
-│   ├── 02-preprocessing.ipynb
-│   ├── 03-features.ipynb
-│   └── 04-results.ipynb
-│
-├── src/
-│   ├── __init__.py
-│   ├── loader.py
-│   ├── preprocessing.py
-│   ├── features.py
-│   └── evaluation.py
-│
-├── scripts/
-│   ├── build_dataset.py
-│   └── train_evaluate.py
-│
-└── experiments/
-    └── run_001/
-        ├── config.yaml
-        ├── metrics.json
-        └── figures/
+│   ├── 01_raw/               # (Git Ignored) Raw WESAD dataset files
+│   ├── 02_intermediate/      # (Git Ignored) Preprocessed signal windows
+│   └── 03_processed/         # (Git Ignored) Final feature matrices
+├── src/                      # Source code
+│   ├── preprocessing/        # Signal cleaning and windowing
+│   ├── features/             # Statistical & physiological feature extraction
+│   ├── models/               # Model training, evaluation, and LOSO validation
+│   └── utils/                # Utility scripts
+├── notebooks/                # Jupyter Notebooks for exploratory data analysis (EDA)
+├── experiments/              # Models, configurations, and evaluation reports
+├── report/                   # Project documentation and academic reports
+├── config.yaml               # Centralized pipeline configuration
+├── requirements.txt          # Python dependencies
+└── README.md                 # This documentation
 ```
 
-## Folder Meaning
+---
 
-- `data/01_raw/`: original WESAD files stored locally.
-- `data/02_intermediate/`: temporary or partially processed data.
-- `data/03_processed/`: final data ready for training and evaluation.
-- `documents/`: project notes, checklist, and academic brief.
-- `notebooks/`: notebooks for analysis, checks, and results.
-- `src/`: reusable Python modules.
-- `scripts/`: command-line entry points.
-- `experiments/`: saved outputs from each run.
+## 🚀 Getting Started
 
-## Dataset
+### 1. Prerequisites
+Ensure you have **Python 3.10+** installed. It is recommended to use a virtual environment.
 
-- WESAD: https://ubi29.informatik.uni-siegen.de/usi/data_wesad.html
-
-## Reproducible Workflow
-
-Install the Python dependencies:
-
+### 2. Install Dependencies
 ```bash
-python -m pip install -r requirements.txt
+pip install -r requirements.txt
 ```
+*(Dependencies include: `scikit-learn`, `xgboost`, `pandas`, `numpy`, `pyyaml`, `scipy`, and `matplotlib`)*
 
-Place the raw WESAD subject folders under `data/01_raw/WESAD`, then build
-transition-safe wrist-only features:
+### 3. Download the WESAD Dataset
+1.  Download the official WESAD dataset from [UCI Machine Learning Repository](https://archive.ics.uci.edu/ml/datasets/WESAD+(Wrist+and+Chest+Affect+Detection)).
+2.  Extract the zip file and place the raw subject folders (`S2`, `S3`, ..., `S17`) inside the `data/01_raw/` directory.
 
+### 4. Run the Pipeline
+The pipeline can be executed via the main scripts or by exploring the notebooks:
 ```bash
-python scripts/build_dataset.py
+# Example: Run preprocessing and feature extraction
+python scripts/preprocess_signals.py
+python scripts/extract_features.py
+python scripts/train_loso.py
 ```
-
-By default, the builder discards any 60 second physiological window that spans
-more than one protocol label. This reduces transition leakage caused by assigning
-a window label from only the final time point. To reproduce the original,
-less strict windowing, pass `--allow-mixed-label-windows`.
-
-Train and evaluate both tasks with leave-one-subject-out validation on CUDA:
-
-```bash
-python scripts/train_evaluate.py
-```
-
-The final script intentionally runs a small compliant model comparison:
-`Logistic Regression`, `Linear SVM`, `Torch MLP`, and `Torch MLP Balanced`.
-The Torch models are forced onto CUDA. The script saves metrics, reports,
-confusion matrices, per-subject tables, ROC/AUC outputs where probabilities are
-available, and report-ready figures under `experiments/final_gpu`.
-
-For a CUDA run on Windows, install PyTorch CUDA first:
-
-```bash
-python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
-```
-
-Then run the final GPU experiment:
-
-```bash
-python scripts/train_evaluate.py
-```
-
-The script fails early if CUDA is not available for the Torch models.
-For a faster smoke test, add for example `--torch-epochs 5`.
-
-## Evaluation Notes
-
-- Primary binary task: train a real stress vs. non-stress classifier.
-- Multi-class task: baseline vs. stress vs. amusement, reported as secondary.
-- Main metrics: Macro-F1 and balanced accuracy, with weighted metrics retained
-  for comparison.
-- ROC/AUC outputs are saved as CSV summaries and PNG figures.
-- `metrics_binary_from_multiclass.csv` is diagnostic only; it collapses
-  multi-class predictions and should not be reported as the primary binary
-  result.
-- The code keeps only the required final model comparison; old tuning branches,
-  LSTM code, cuML branches, and cache-heavy explainability helpers were removed
-  from `src/`.

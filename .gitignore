@@ -1,27 +1,33 @@
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
-.ipynb_checkpoints/
+*$py.class
+*.so
 
-# Virtual environments and local caches
+# Environments
 .venv/
-.uv-cache/
+venv/
+ENV/
+env/
+.python-version
 
-# Model artifacts
-*.joblib
-experiments/run_*/loso_results*.npz
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
 
-# Data
-data/01_raw/**
-data/02_intermediate/**
-data/03_processed/**
-!data/01_raw/.gitkeep
-!data/02_intermediate/.gitkeep
-!data/03_processed/.gitkeep
+# VSCode
+.vscode/
 
-# Experiment outputs
-experiments/run_*/figures/**
-!experiments/run_*/figures/.gitkeep
+# Large Datasets (WESAD raw data)
+data/01_raw/
+data/02_intermediate/
+data/03_processed/
+*.zip
+*.tar.gz
+*.pkl
+*.csv
+*.npy
 
-# Course documents and local briefs
-documents/*.pdf
+# Exclude specific large experiment files
+experiments/models/
+experiments/results/*.pkl
